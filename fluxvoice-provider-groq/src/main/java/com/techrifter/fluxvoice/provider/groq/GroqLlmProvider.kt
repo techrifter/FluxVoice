@@ -32,29 +32,36 @@ private const val TAG = "GroqLlmProvider"
 private const val GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 /**
- * LLM provider backed by the Groq inference platform (OpenAI-compatible SSE streaming).
- *
- * Groq delivers sub-500ms time-to-first-token on most models, making it ideal for
- * voice assistants where latency is the user-facing metric that matters most.
+ * LLM provider using SSE streaming. Defaults to Groq, but works with
+ * any compatible endpoint — OpenAI, Gemini, Ollama, etc.
  *
  * ```kotlin
- * val controller = rememberFluxVoice {
- *     llmProvider = GroqLlmProvider(apiKey = BuildConfig.GROQ_API_KEY)
- *     // Optional: pick a specific model
- *     llmProvider = GroqLlmProvider(
- *         apiKey  = BuildConfig.GROQ_API_KEY,
- *         modelId = "llama-3.1-8b-instant"   // fastest, lowest cost
- *     )
- * }
+ * // Groq (default)
+ * llmProvider = GroqLlmProvider(apiKey = BuildConfig.GROQ_KEY)
+ *
+ * // OpenAI
+ * llmProvider = GroqLlmProvider(
+ *     apiKey  = BuildConfig.OPENAI_KEY,
+ *     modelId = "gpt-4o-mini",
+ *     baseUrl = "https://api.openai.com/v1/chat/completions"
+ * )
+ *
+ * // Ollama (local, no key needed)
+ * llmProvider = GroqLlmProvider(
+ *     apiKey  = "",
+ *     modelId = "llama3",
+ *     baseUrl = "http://localhost:11434/v1/chat/completions"
+ * )
  * ```
  *
- * @param apiKey   Groq API key. Get one at console.groq.com.
- * @param modelId  Groq model ID. Defaults to `llama-3.3-70b-versatile` (best quality).
- *                 For speed-critical use cases try `llama-3.1-8b-instant`.
+ * @param apiKey   API key for the provider. Pass an empty string for keyless endpoints (e.g. Ollama).
+ * @param modelId  Model ID to request. Defaults to `llama-3.3-70b-versatile` (Groq).
+ * @param baseUrl  Chat completions endpoint. Defaults to Groq's URL. Pass your own for other providers or local endpoints.
  */
 public class GroqLlmProvider(
     private val apiKey: String,
-    private val modelId: String = "llama-3.3-70b-versatile"
+    private val modelId: String = "llama-3.3-70b-versatile",
+    private val baseUrl: String = GROQ_CHAT_URL,
 ) : LlmProvider {
 
     private val json = Json {
@@ -73,7 +80,7 @@ public class GroqLlmProvider(
         send(StreamEvent.Start)
         try {
             val request = buildRequest(messages, config)
-            val response = httpClient.post(GROQ_CHAT_URL) {
+            val response = httpClient.post(baseUrl) {
                 contentType(ContentType.Application.Json)
                 bearerAuth(apiKey)
                 setBody(request)
@@ -87,10 +94,10 @@ public class GroqLlmProvider(
                 }
                 val msg = when (response.status.value) {
                     400      -> "Bad request — check your model ID."
-                    401, 403 -> "Invalid Groq API key. Update it in your config."
-                    404      -> "Model '$modelId' not found on Groq."
-                    429      -> "Groq rate limit reached. Wait a moment and try again."
-                    500, 503 -> "Groq server error (${response.status.value}). Try again shortly."
+                    401, 403 -> "Invalid LLM API key. Update it in your config."
+                    404      -> "Model '$modelId' not found."
+                    429      -> "LLM Rate limit reached. Wait a moment and try again."
+                    500, 503 -> "LLM Server error (${response.status.value}). Try again shortly."
                     else     -> "HTTP ${response.status.value}: $body"
                 }
                 send(StreamEvent.Error(Exception(msg)))
