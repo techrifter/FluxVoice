@@ -1,0 +1,2 @@
+-keep public class com.techrifter.fluxvoice.tts.cartesia.** { *; }
+-keepclassmembers class com.techrifter.fluxvoice.tts.cartesia.** { *; }

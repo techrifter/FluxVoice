@@ -1,0 +1,2 @@
+-keep public class com.techrifter.fluxvoice.stt.deepgram.** { *; }
+-keepclassmembers class com.techrifter.fluxvoice.stt.deepgram.** { *; }

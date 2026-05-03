@@ -1,0 +1,2 @@
+-keep public class com.techrifter.fluxvoice.android.** { *; }
+-keepclassmembers class com.techrifter.fluxvoice.android.** { *; }
