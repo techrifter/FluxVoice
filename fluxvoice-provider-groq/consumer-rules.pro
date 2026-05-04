@@ -1,2 +1,0 @@
--keep public class com.techrifter.fluxvoice.provider.groq.** { *; }
--keepclassmembers class com.techrifter.fluxvoice.provider.groq.** { *; }
