@@ -13,7 +13,7 @@
             <option value="$PROJECT_DIR$/fluxvoice-android" />
             <option value="$PROJECT_DIR$/fluxvoice-compose" />
             <option value="$PROJECT_DIR$/fluxvoice-core" />
-            <option value="$PROJECT_DIR$/fluxvoice-provider-groq" />
+            <option value="$PROJECT_DIR$/fluxvoice-provider-llm" />
             <option value="$PROJECT_DIR$/fluxvoice-stt-deepgram" />
             <option value="$PROJECT_DIR$/fluxvoice-tts-cartesia" />
           </set>

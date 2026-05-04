@@ -21,7 +21,7 @@ implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-android:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-core:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
-implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
 implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
 ```

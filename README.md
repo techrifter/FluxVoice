@@ -73,7 +73,7 @@ There are three ways to integrate FluxVoice. Pick the one that fits your use cas
 | Build my own screen, just need the voice engine | `fluxvoice-android` | Your own Compose/View UI |
 | Build everything myself, just want the interfaces | `fluxvoice-core` | Your own engine + UI |
 
-All three setups use the same provider modules (`fluxvoice-stt-deepgram`, `fluxvoice-provider-groq`, `fluxvoice-tts-cartesia`) which work identically regardless of which path you choose.
+All three setups use the same provider modules (`fluxvoice-stt-deepgram`, `fluxvoice-provider-llm`, `fluxvoice-tts-cartesia`) which work identically regardless of which path you choose.
 
 ---
 
@@ -112,7 +112,7 @@ dependencyResolutionManagement {
 // app/build.gradle.kts
 implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
-implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
 ```
 
@@ -147,7 +147,7 @@ fun VoiceScreen() {
     val controller = rememberFluxVoice(mode) {
         systemPrompt = mode.defaultPrompt
         sttProvider  = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
-        llmProvider  = GroqLlmProvider(apiKey = "YOUR_GROQ_KEY")
+        llmProvider  = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
         ttsProvider  = CartesiaTtsProvider(apiKey = "YOUR_CARTESIA_KEY")
     }
 
@@ -188,7 +188,7 @@ var mode by remember { mutableStateOf(FluxVoiceMode.FAST) }
 val controller = rememberFluxVoice(mode) {   // ← mode as key: engine recreates on change
     systemPrompt = mode.defaultPrompt        
     sttProvider  = DeepgramSttProvider(...)
-    llmProvider  = GroqLlmProvider(...)
+    llmProvider  = OpenAiCompatibleLlmProvider(...)
     ttsProvider  = CartesiaTtsProvider(...)
 }
 
@@ -236,7 +236,7 @@ val controller = rememberFluxVoice(mode) {
         apiKey = BuildConfig.DEEPGRAM_KEY,
         model  = "nova-3"
     )
-    llmProvider = GroqLlmProvider(
+    llmProvider = OpenAiCompatibleLlmProvider(
         apiKey  = BuildConfig.GROQ_KEY,
         modelId = "llama-3.3-70b-versatile"
     )
@@ -331,7 +331,7 @@ FluxVoiceScreen(
 fun MyScreen() {
     val controller = rememberFluxVoice {
         sttProvider = DeepgramSttProvider(apiKey = BuildConfig.DEEPGRAM_KEY)
-        llmProvider = GroqLlmProvider(apiKey = BuildConfig.GROQ_KEY)
+        llmProvider = OpenAiCompatibleLlmProvider(apiKey = BuildConfig.GROQ_KEY)
         ttsProvider = CartesiaTtsProvider(apiKey = BuildConfig.CARTESIA_KEY)
     }
 
@@ -392,7 +392,7 @@ Use `fluxvoice-android` without `fluxvoice-compose` to drive your own UI entirel
 // app/build.gradle.kts
 implementation("com.techrifter.fluxvoice:fluxvoice-android:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
-implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
 ```
 
@@ -402,7 +402,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     val controller = FluxVoiceEngine(
         config = FluxVoiceConfig {
             sttProvider  = DeepgramSttProvider(BuildConfig.DEEPGRAM_KEY)
-            llmProvider  = GroqLlmProvider(BuildConfig.GROQ_KEY)
+            llmProvider  = OpenAiCompatibleLlmProvider(BuildConfig.GROQ_KEY)
             ttsProvider  = CartesiaTtsProvider(BuildConfig.CARTESIA_KEY)
             systemPrompt = "You are a concise voice assistant."
         },
@@ -469,7 +469,7 @@ If `ttsProvider` is left unset. The pipeline completes the STT → LLM path and 
 ```kotlin
 val controller = rememberFluxVoice {
     sttProvider = DeepgramSttProvider(apiKey = BuildConfig.DEEPGRAM_KEY)
-    llmProvider = GroqLlmProvider(apiKey = BuildConfig.GROQ_KEY)
+    llmProvider = OpenAiCompatibleLlmProvider(apiKey = BuildConfig.GROQ_KEY)
     // no ttsProvider
     onResponse { response ->
         tts.speak(response, TextToSpeech.QUEUE_FLUSH, null, null)
@@ -497,7 +497,7 @@ Get a key at [console.deepgram.com](https://console.deepgram.com).
 ### LLM - Groq
 
 ```kotlin
-GroqLlmProvider(
+OpenAiCompatibleLlmProvider(
     apiKey  = BuildConfig.GROQ_KEY,
     modelId = "llama-3.3-70b-versatile"   // default
 )
@@ -684,7 +684,7 @@ Pick only what you need - every module is independently published to Maven Centr
 | `fluxvoice-android` | `FluxVoiceEngine` - the full pipeline orchestrator with VAD, audio capture, sentence extraction, conversation history, retries |
 | `fluxvoice-compose` | `FluxVoiceScreen`, `FluxVoiceView`, `rememberFluxVoice`, `FluxVoiceMode`, `FluxVoiceViewConfig`, `FluxVoiceColors` |
 | `fluxvoice-stt-deepgram` | `DeepgramSttProvider` - Deepgram real-time transcription via WebSocket |
-| `fluxvoice-provider-groq` | `GroqLlmProvider` - Groq chat completions via SSE streaming |
+| `fluxvoice-provider-llm` | `OpenAiCompatibleLlmProvider` - OpenAI-compatible chat completions via SSE streaming (Groq, OpenAI, Ollama, etc.) |
 | `fluxvoice-tts-cartesia` | `CartesiaTtsProvider` - Cartesia Sonic synthesis; `CARTESIA_VOICE` constant |
 
 **Dependency chain:** `fluxvoice-compose` → `fluxvoice-android` → `fluxvoice-core`. Adding `fluxvoice-compose` transitively pulls in the other two - you don't need to add them separately. The three provider modules each depend only on `fluxvoice-core` and are independent of each other.
@@ -703,7 +703,7 @@ implementation("com.techrifter.fluxvoice:fluxvoice-core:1.0.0")
 
 // Providers - add whichever you need (work with any of the above)
 implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
-implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
 implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
 ```
 
