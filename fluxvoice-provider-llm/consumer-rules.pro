@@ -1,0 +1,2 @@
+-keep public class com.techrifter.fluxvoice.provider.llm.** { *; }
+-keepclassmembers class com.techrifter.fluxvoice.provider.llm.** { *; }

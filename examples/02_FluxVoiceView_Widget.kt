@@ -13,7 +13,7 @@
  * Dependencies (app/build.gradle.kts):
  *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
  */
 
@@ -37,7 +37,7 @@ import com.techrifter.fluxvoice.compose.FluxVoiceTheme
 import com.techrifter.fluxvoice.compose.FluxVoiceView
 import com.techrifter.fluxvoice.compose.FluxVoiceViewConfig
 import com.techrifter.fluxvoice.compose.rememberFluxVoice
-import com.techrifter.fluxvoice.provider.groq.GroqLlmProvider
+import com.techrifter.fluxvoice.provider.llm.OpenAiCompatibleLlmProvider
 import com.techrifter.fluxvoice.stt.deepgram.DeepgramSttProvider
 import com.techrifter.fluxvoice.tts.cartesia.CartesiaTtsProvider
 
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
                 val controller = rememberFluxVoice {
                     systemPrompt = "You are a concise assistant. Answer in one sentence."
                     sttProvider  = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
-                    llmProvider  = GroqLlmProvider(apiKey = "YOUR_GROQ_KEY")
+                    llmProvider  = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
                     ttsProvider  = CartesiaTtsProvider(apiKey = "YOUR_CARTESIA_KEY")
                 }
 

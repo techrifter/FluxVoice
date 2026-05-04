@@ -14,7 +14,7 @@
  * Dependencies (app/build.gradle.kts):
  *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
  *   implementation("androidx.datastore:datastore-preferences:1.1.4")
  *   implementation("androidx.navigation:navigation-compose:2.9.0")
@@ -73,7 +73,7 @@ import com.techrifter.fluxvoice.compose.FluxVoiceMode
 import com.techrifter.fluxvoice.compose.FluxVoiceScreen
 import com.techrifter.fluxvoice.compose.FluxVoiceTheme
 import com.techrifter.fluxvoice.compose.rememberFluxVoice
-import com.techrifter.fluxvoice.provider.groq.GroqLlmProvider
+import com.techrifter.fluxvoice.provider.llm.OpenAiCompatibleLlmProvider
 import com.techrifter.fluxvoice.stt.deepgram.DeepgramSttProvider
 import com.techrifter.fluxvoice.tts.cartesia.CartesiaTtsProvider
 import kotlinx.coroutines.flow.map
@@ -158,7 +158,7 @@ class MainActivity : ComponentActivity() {
                             backchannelEnabled = settings.backchannelEnabled
 
                             sttProvider = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
-                            llmProvider = GroqLlmProvider(apiKey = "YOUR_GROQ_KEY")
+                            llmProvider = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
                             ttsProvider = CartesiaTtsProvider(apiKey = "YOUR_CARTESIA_KEY")
                         }
 

@@ -12,7 +12,7 @@
  * Dependencies (app/build.gradle.kts):
  *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
  *   // No fluxvoice-tts-cartesia needed
  */
 
@@ -25,7 +25,7 @@ import androidx.activity.enableEdgeToEdge
 import com.techrifter.fluxvoice.compose.FluxVoiceScreen
 import com.techrifter.fluxvoice.compose.FluxVoiceTheme
 import com.techrifter.fluxvoice.compose.rememberFluxVoice
-import com.techrifter.fluxvoice.provider.groq.GroqLlmProvider
+import com.techrifter.fluxvoice.provider.llm.OpenAiCompatibleLlmProvider
 import com.techrifter.fluxvoice.stt.deepgram.DeepgramSttProvider
 import java.util.Locale
 
@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
             FluxVoiceTheme {
                 val controller = rememberFluxVoice {
                     sttProvider = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
-                    llmProvider = GroqLlmProvider(apiKey = "YOUR_GROQ_KEY")
+                    llmProvider = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
                     // no ttsProvider — pipeline stops after LLM, fires onResponse
 
                     onResponse { response ->

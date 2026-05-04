@@ -8,13 +8,13 @@
  *  - All callbacks: onTranscript, onResponse, onError, onStateChange
  *  - FluxVoiceState fields: voiceState, partialTranscript, transcript, aiResponse, errorMessage
  *  - Controller methods: tap(), clear(), dismissError(), destroy()
- *  - DeepgramSttProvider model param, GroqLlmProvider modelId param,
+ *  - DeepgramSttProvider model param, OpenAiCompatibleLlmProvider modelId param,
  *    CartesiaTtsProvider voiceId + modelId params
  *
  * Dependencies (app/build.gradle.kts):
  *   implementation("com.techrifter.fluxvoice:fluxvoice-android:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-groq:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
  *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
  *   implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
  */
@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.techrifter.fluxvoice.android.FluxVoiceEngine
 import com.techrifter.fluxvoice.core.FluxVoiceConfig
-import com.techrifter.fluxvoice.provider.groq.GroqLlmProvider
+import com.techrifter.fluxvoice.provider.llm.OpenAiCompatibleLlmProvider
 import com.techrifter.fluxvoice.stt.deepgram.DeepgramSttProvider
 import com.techrifter.fluxvoice.tts.cartesia.CARTESIA_VOICE
 import com.techrifter.fluxvoice.tts.cartesia.CartesiaTtsProvider
@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
                                 apiKey = "YOUR_DEEPGRAM_KEY",
                                 model  = "nova-3"             // default
                             )
-                            llmProvider = GroqLlmProvider(
+                            llmProvider = OpenAiCompatibleLlmProvider(
                                 apiKey  = "YOUR_GROQ_KEY",
                                 modelId = "llama-3.3-70b-versatile"  // default
                             )

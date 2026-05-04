@@ -13,7 +13,7 @@ package com.techrifter.fluxvoice.core
  * ```kotlin
  * // In your Composable
  * val controller = rememberFluxVoice {           // from fluxvoice-compose
- *     llmProvider = GroqLlmProvider("gsk_...")   // from fluxvoice-provider-groq
+ *     llmProvider = OpenAiCompatibleLlmProvider("gsk_...")   // from fluxvoice-provider-llm
  *     sttProvider = DeepgramSttProvider("...")   // from fluxvoice-stt-deepgram
  *     ttsProvider = CartesiaTtsProvider("...")   // from fluxvoice-tts-cartesia
  * }
