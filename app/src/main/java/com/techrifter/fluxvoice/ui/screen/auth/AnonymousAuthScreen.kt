@@ -44,9 +44,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -71,6 +73,7 @@ fun AnonymousAuthScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
+    val uriHandler = LocalUriHandler.current
 
     BoxWithConstraints(
         modifier = Modifier
@@ -266,37 +269,65 @@ fun AnonymousAuthScreen(
             }
 
             // ── Bottom Action Section ─────────────────────────────────────────
-            Button(
-                onClick = { viewModel.confirmIdentity(onComplete) },
-                enabled = !uiState.isLoading,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = FluxCyan,
-                    contentColor = ObsidianVoid
-                ),
-                contentPadding = PaddingValues(vertical = 14.dp),
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = ObsidianVoid,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(Modifier.width(10.dp))
+                Button(
+                    onClick = { viewModel.confirmIdentity(onComplete) },
+                    enabled = !uiState.isLoading,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = FluxCyan,
+                        contentColor = ObsidianVoid
+                    ),
+                    contentPadding = PaddingValues(vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (uiState.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = ObsidianVoid,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "SETTING UP ACCOUNT…",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = "GET STARTED ↗",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.0.sp
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
-                        text = "SETTING UP ACCOUNT…",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "By continuing, you agree to our",
+                        fontSize = 11.5.sp,
+                        color = TextSlateMuted
                     )
-                } else {
                     Text(
-                        text = "GET STARTED ↗",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.0.sp
+                        text = "Privacy Policy ↗",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = FluxCyan,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            uriHandler.openUri("https://sites.google.com/view/fluxvoice-privacy-policy")
+                        }
                     )
                 }
             }
