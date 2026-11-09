@@ -1,7 +1,12 @@
 package com.techrifter.fluxvoice.ui.screen.voice
 
+import com.techrifter.fluxvoice.core.model.TurnMetrics
 import com.techrifter.fluxvoice.domain.model.AppMode
+import com.techrifter.fluxvoice.domain.model.Message
+import com.techrifter.fluxvoice.domain.model.PipelineConfig
 import com.techrifter.fluxvoice.domain.model.VoiceMode
+import com.techrifter.fluxvoice.domain.model.VoiceScenario
+import com.techrifter.fluxvoice.domain.pipeline.PipelineReadiness
 
 /**
  * Represents the current phase of the voice conversation pipeline.
@@ -60,10 +65,34 @@ data class VoiceUiState(
     /** AI response text, accumulated from the token stream. */
     val aiResponse: String = "",
 
+    /** Full conversation history turns (user and assistant messages). */
+    val messages: List<Message> = emptyList(),
+
     /** Non-null while an error snackbar should be shown. */
     val errorMessage: String? = null,
 
+    /** Active pipeline configuration selected in playground */
+    val activePipeline: PipelineConfig? = null,
+
+    /** Readiness status for active pipeline (credentials check) */
+    val pipelineReadiness: PipelineReadiness = PipelineReadiness.Ready,
+
+    /** Benchmark metrics for the latest completed voice turn */
+    val lastMetrics: TurnMetrics? = null,
+
+    /** Whether the benchmark HUD card is expanded */
+    val isBenchmarkHudExpanded: Boolean = true,
+
     /** Whether the app currently holds the RECORD_AUDIO permission. */
-    val hasAudioPermission: Boolean = false
+    val hasAudioPermission: Boolean = false,
+
+    /** Dynamically generated voice scenarios (time-adaptive or real-time LLM curated) */
+    val scenarios: List<VoiceScenario> = emptyList(),
+
+    /** Whether an active AI shuffle / scenario refresh is in-flight */
+    val isShufflingScenarios: Boolean = false,
+
+    /** Active operator username */
+    val anonymousUsername: String = ""
 )
 

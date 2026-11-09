@@ -1,5 +1,6 @@
 package com.techrifter.fluxvoice.android
 
+import android.os.SystemClock
 import android.util.Log
 import com.techrifter.fluxvoice.android.audio.FluxVoiceAudioCapture
 import com.techrifter.fluxvoice.android.audio.FluxVoiceVad
@@ -9,6 +10,7 @@ import com.techrifter.fluxvoice.core.FluxVoiceConfig
 import com.techrifter.fluxvoice.core.FluxVoiceController
 import com.techrifter.fluxvoice.core.FluxVoiceState
 import com.techrifter.fluxvoice.core.model.GenerationConfig
+import com.techrifter.fluxvoice.core.model.TurnMetrics
 import com.techrifter.fluxvoice.core.state.SttState
 import com.techrifter.fluxvoice.core.state.TtsState
 import com.techrifter.fluxvoice.core.state.VoiceState
@@ -38,7 +40,7 @@ private val BACKCHANNELS = listOf("Got it.", "Sure.", "Mm-hmm.", "Okay.", "Let m
  * val engine = FluxVoiceEngine(
  *     config = FluxVoiceConfig {
  *         sttProvider = DeepgramSttProvider(apiKey)
- *         llmProvider = GroqLlmProvider(apiKey)
+ *         llmProvider = OpenAiCompatibleLlmProvider(apiKey)
  *         ttsProvider = CartesiaTtsProvider(apiKey, voiceId)
  *     },
  *     scope = viewModelScope
@@ -83,7 +85,18 @@ public class FluxVoiceEngine(
     @Volatile private var isStreamingComplete  = false
     @Volatile private var isBackchannelPhase   = false
 
+    // ── Telemetry & Stopwatch ────────────────────────────────────────────────
+    @Volatile private var speechStartRealtime: Long = 0L
+    @Volatile private var turnStartRealtime: Long = 0L
+    @Volatile private var firstTokenRealtime: Long = 0L
+    @Volatile private var firstAudioRealtime: Long = 0L
+    @Volatile private var bargeInRealtime: Long? = null
+    @Volatile private var promptTokensCount: Int = 0
+    @Volatile private var completionTokensCount: Int = 0
+
     init {
+        tts?.setSpeechRate(config.speechRate)
+        tts?.setPitch(config.pitch)
         observeStt()
         observeTts()
     }
@@ -144,6 +157,14 @@ public class FluxVoiceEngine(
         _state.update { it.copy(errorMessage = null) }
     }
 
+    override fun setSpeechRate(rate: Float) {
+        tts?.setSpeechRate(rate)
+    }
+
+    override fun setPitch(pitch: Float) {
+        tts?.setPitch(pitch)
+    }
+
     override fun destroy() {
         clear()
         stt?.destroy()
@@ -160,17 +181,34 @@ public class FluxVoiceEngine(
                 when (sttState) {
                     SttState.Listening -> {
                         transitionTo(VoiceState.LISTENING)
+                        speechStartRealtime = SystemClock.elapsedRealtime()
                         // Hard guard: kill TTS if somehow still playing when mic opens.
                         interruptTtsIfSpeaking()
                         armNoSpeechTimeout()
                     }
                     is SttState.PartialResult -> {
+                        if (speechStartRealtime == 0L) {
+                            speechStartRealtime = SystemClock.elapsedRealtime()
+                        }
                         _state.update { it.copy(partialTranscript = sttState.text) }
                         armNoSpeechTimeout()
                     }
                     is SttState.FinalResult -> {
                         cancelNoSpeechTimeout()
-                        Log.d(TAG, "STT FinalResult: '${sttState.text}'")
+                        val text = sttState.text.trim()
+                        if (text.isBlank()) {
+                            Log.d(TAG, "STT FinalResult was blank, returning to IDLE")
+                            transitionTo(VoiceState.IDLE)
+                            return@collect
+                        }
+                        Log.d(TAG, "STT FinalResult: '$text'")
+                        turnStartRealtime = SystemClock.elapsedRealtime()
+                        firstTokenRealtime = 0L
+                        firstAudioRealtime = 0L
+                        bargeInRealtime = null
+                        promptTokensCount = 0
+                        completionTokensCount = 0
+
                         stt.stopListening()
                         // Pre-warm the STT socket while AI thinks + TTS plays so the
                         // next startListening() connects with near-zero latency.
@@ -178,13 +216,13 @@ public class FluxVoiceEngine(
                         _state.update {
                             it.copy(
                                 voiceState        = VoiceState.THINKING,
-                                transcript        = sttState.text,
+                                transcript        = text,
                                 partialTranscript = "",
                                 aiResponse        = ""
                             )
                         }
-                        config.onTranscript?.invoke(sttState.text)
-                        startAiResponse(sttState.text)
+                        config.onTranscript?.invoke(text)
+                        startAiResponse(text)
                     }
                     is SttState.Error -> {
                         cancelNoSpeechTimeout()
@@ -216,6 +254,9 @@ public class FluxVoiceEngine(
                 when (ttsState) {
                     TtsState.Speaking -> {
                         transitionTo(VoiceState.SPEAKING)
+                        if (!isBackchannelPhase && firstAudioRealtime == 0L && turnStartRealtime > 0L) {
+                            firstAudioRealtime = SystemClock.elapsedRealtime()
+                        }
                         // Hard mutual-exclusion: mic must be OFF while TTS plays.
                         stt?.stopListening()
                         // Arm VAD so the user can interrupt without tapping.
@@ -241,6 +282,13 @@ public class FluxVoiceEngine(
                     is TtsState.Error -> {
                         vad.stop()
                         config.onError?.invoke(RuntimeException(ttsState.message))
+                        val jobDone = streamingJob?.isCompleted == true
+                        if (isStreamingComplete || jobDone) {
+                            Log.d(TAG, "TTS error with streaming complete → finishing turn")
+                            finishTurnAndRestart()
+                        } else if (_state.value.voiceState == VoiceState.SPEAKING) {
+                            _state.update { it.copy(voiceState = VoiceState.IDLE, transcript = "", aiResponse = "") }
+                        }
                     }
                 }
             }
@@ -270,6 +318,7 @@ public class FluxVoiceEngine(
         streamingJob?.cancel()
         tts?.stop()
         vad.stop()
+        bargeInRealtime = SystemClock.elapsedRealtime()
         isStreamingComplete = false
         isBackchannelPhase  = false
         transitionTo(VoiceState.INTERRUPTING)
@@ -360,8 +409,10 @@ public class FluxVoiceEngine(
             wordCount <= 10 -> "\nRespond in 1–2 sentences."
             else            -> ""
         }
+        val voiceDirective = "\nSpeak directly in natural conversational prose suitable for real-time voice output. Never use pleasantry preamble (like 'Sure!' or 'Certainly!'), markdown symbols, bullet points, tables, code blocks, or emojis. Use punctuation to guide natural spoken pacing."
         val genConfig = GenerationConfig(
-            systemPrompt    = config.systemPrompt + lengthHint,
+            modelId         = config.modelId,
+            systemPrompt    = config.systemPrompt.trim() + " " + voiceDirective + lengthHint,
             temperature     = config.temperature,
             maxOutputTokens = config.maxOutputTokens
         )
@@ -378,8 +429,16 @@ public class FluxVoiceEngine(
                             _state.update { it.copy(voiceState = VoiceState.THINKING) }
                         }
 
+                        is StreamEvent.Usage -> {
+                            promptTokensCount = event.promptTokens
+                            completionTokensCount = event.completionTokens
+                        }
+
                         is StreamEvent.Token -> {
-                            // First token cancels the pending backchannel.
+                            // First token cancels the pending backchannel and marks TTFT.
+                            if (firstTokenRealtime == 0L && turnStartRealtime > 0L) {
+                                firstTokenRealtime = SystemClock.elapsedRealtime()
+                            }
                             backchannelJob?.cancel(); backchannelJob = null
 
                             tokenBuffer.append(event.text)
@@ -425,8 +484,8 @@ public class FluxVoiceEngine(
                             conversation.addAssistantMessage(fullText)
                             config.onResponse?.invoke(fullText)
 
-                            // When TTS is disabled there's no TtsState.Idle coming — finish now.
-                            if (tts == null) finishTurnAndRestart()
+                            // When TTS is disabled or TTS already failed with error, finish now.
+                            if (tts == null || tts.state.value is TtsState.Error) finishTurnAndRestart()
                         }
 
                         is StreamEvent.Error -> {
@@ -439,9 +498,12 @@ public class FluxVoiceEngine(
                                 kotlinx.coroutines.delay(600L * retryAttempt)
                                 startAiResponse(userInput, retryAttempt + 1)
                             } else {
+                                isStreamingComplete = false
                                 _state.update {
                                     it.copy(
                                         voiceState   = VoiceState.IDLE,
+                                        transcript   = "",
+                                        aiResponse   = "",
                                         errorMessage = userFacingError(event.cause.message ?: "")
                                     )
                                 }
@@ -457,9 +519,12 @@ public class FluxVoiceEngine(
                     kotlinx.coroutines.delay(600L * retryAttempt)
                     startAiResponse(userInput, retryAttempt + 1)
                 } else {
+                    isStreamingComplete = false
                     _state.update {
                         it.copy(
                             voiceState   = VoiceState.IDLE,
+                            transcript   = "",
+                            aiResponse   = "",
                             errorMessage = userFacingError(e.message ?: "")
                         )
                     }
@@ -469,8 +534,29 @@ public class FluxVoiceEngine(
     }
 
     private fun finishTurnAndRestart() {
+        val now = SystemClock.elapsedRealtime()
+        val sttLatency = if (speechStartRealtime > 0L && turnStartRealtime >= speechStartRealtime) turnStartRealtime - speechStartRealtime else 0L
+        val ttft = if (firstTokenRealtime > turnStartRealtime) firstTokenRealtime - turnStartRealtime else 0L
+        val ttfa = if (firstAudioRealtime > turnStartRealtime) firstAudioRealtime - turnStartRealtime else 0L
+        val total = if (now > turnStartRealtime && turnStartRealtime > 0L) now - turnStartRealtime else 0L
+        val bargeInDelay = bargeInRealtime?.let { if (it > turnStartRealtime) it - turnStartRealtime else null }
+
+        val metrics = TurnMetrics(
+            sttLatencyMs        = sttLatency,
+            timeToFirstTokenMs  = ttft,
+            timeToFirstAudioMs  = ttfa,
+            totalTurnDurationMs = total,
+            bargeInLatencyMs    = bargeInDelay,
+            bargeInOccurred     = bargeInDelay != null,
+            inputTokens         = promptTokensCount,
+            outputTokens        = completionTokensCount
+        )
+
         isStreamingComplete = false
         transitionTo(VoiceState.IDLE)
+        _state.update { it.copy(metrics = metrics) }
+        config.onTurnMetrics?.invoke(metrics)
+
         stt?.preConnect()
         scope.launch {
             kotlinx.coroutines.delay(TURN_RESTART_DELAY_MS)
@@ -506,6 +592,7 @@ public class FluxVoiceEngine(
         raw.contains("Socket closed", ignoreCase = true) ||
         raw.contains("EOF", ignoreCase = true)              ->
             "Connection interrupted. Tap to try again."
+        raw.isNotBlank() && !raw.contains("Exception") && raw.length <= 150 -> raw
         else -> "Something went wrong. Tap to try again."
     }
 }

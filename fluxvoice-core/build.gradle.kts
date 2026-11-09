@@ -35,6 +35,8 @@ kotlin {
 dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 // AGP's bundled Dokka uses ASM8 which cannot read sealed classes (PermittedSubclasses).

@@ -1,5 +1,6 @@
 package com.techrifter.fluxvoice.core
 
+import com.techrifter.fluxvoice.core.model.TurnMetrics
 import com.techrifter.fluxvoice.core.state.VoiceState
 
 /**
@@ -20,5 +21,8 @@ public data class FluxVoiceState(
     val aiResponse: String = "",
 
     /** Non-null when an error should be surfaced to the user. */
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+
+    /** Performance telemetry and token accounting for the active/latest turn. */
+    val metrics: TurnMetrics? = null
 )

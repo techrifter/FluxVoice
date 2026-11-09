@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.techrifter.fluxvoice.data.audio.SharedAudioCapture
 import com.techrifter.fluxvoice.data.local.datastore.SettingsDataStore
+import com.techrifter.fluxvoice.data.security.KeyVault
 import com.techrifter.fluxvoice.domain.stt.SttEngine
 import com.techrifter.fluxvoice.domain.stt.SttState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -70,6 +71,7 @@ private const val DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen" +
 class DeepgramSttEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsDataStore: SettingsDataStore,
+    private val keyVault: KeyVault,
     /** Shared single-microphone capture session — eliminates the double-AudioRecord problem. */
     private val sharedCapture: SharedAudioCapture
 ) : SttEngine {
@@ -85,6 +87,9 @@ class DeepgramSttEngine @Inject constructor(
 
     /** Last non-blank transcript received from Deepgram (interim or is_final). */
     @Volatile private var lastPartialText: String = ""
+
+    /** Accumulated text from finalized chunks (is_final: true) during the current session. */
+    private val accumulatedFinalText = StringBuilder()
 
     /**
      * True once a [SttState.FinalResult] has been emitted for the current session.
@@ -228,7 +233,9 @@ class DeepgramSttEngine @Inject constructor(
 
         preConnectJob = scope.launch {
             try {
-                val apiKey = settingsDataStore.settings.first().deepgramApiKey
+                val apiKey = keyVault.getDeepgramKey().ifBlank {
+                    settingsDataStore.settings.first().deepgramApiKey
+                }
                 if (apiKey.isBlank()) return@launch
                 val request = Request.Builder()
                     .url(DEEPGRAM_URL)
@@ -250,10 +257,13 @@ class DeepgramSttEngine @Inject constructor(
         // If we already have speech buffered, emit it as FinalResult immediately
         // so the AI pipeline triggers even if Deepgram never sends speech_final=true.
         if (!finalEmitted) {
-            val pending = lastPartialText
+            val pending = synchronized(accumulatedFinalText) {
+                if (lastPartialText.isNotBlank()) lastPartialText else accumulatedFinalText.toString().trim()
+            }
             if (pending.isNotEmpty()) {
                 finalEmitted = true
                 _state.value = SttState.FinalResult(pending)
+                synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
             }
         }
         // Tell Deepgram to flush any remaining audio.
@@ -270,6 +280,7 @@ class DeepgramSttEngine @Inject constructor(
         recordingJob?.cancel()
         runCatching { activeSocket?.close(1000, "Engine destroyed") }
         activeSocket = null
+        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
         _state.value = SttState.Idle
     }
 
@@ -281,10 +292,15 @@ class DeepgramSttEngine @Inject constructor(
         val myId = sessionId
 
         // Reset per-session state
+        synchronized(accumulatedFinalText) {
+            accumulatedFinalText.clear()
+        }
         lastPartialText = ""
         finalEmitted    = false
 
-        val apiKey = settingsDataStore.settings.first().deepgramApiKey
+        val apiKey = keyVault.getDeepgramKey().ifBlank {
+            settingsDataStore.settings.first().deepgramApiKey
+        }
         if (apiKey.isBlank()) {
             _state.value = SttState.Error(
                 "Speech recognition isn't configured. Add your Deepgram API key in Settings."
@@ -467,10 +483,16 @@ class DeepgramSttEngine @Inject constructor(
             // UtteranceEnd is sent by Deepgram as a hard endpoint fallback;
             // treat it the same as speech_final when we have buffered speech.
             if (type == "UtteranceEnd") {
-                if (!finalEmitted && lastPartialText.isNotEmpty()) {
-                    finalEmitted = true
-                    _state.value = SttState.FinalResult(lastPartialText)
-                    isRecording  = false
+                if (!finalEmitted) {
+                    val pending = synchronized(accumulatedFinalText) {
+                        if (lastPartialText.isNotBlank()) lastPartialText else accumulatedFinalText.toString().trim()
+                    }
+                    if (pending.isNotEmpty()) {
+                        finalEmitted = true
+                        _state.value = SttState.FinalResult(pending)
+                        isRecording  = false
+                        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
+                    }
                 }
                 return
             }
@@ -488,8 +510,30 @@ class DeepgramSttEngine @Inject constructor(
             val isFinal     = obj["is_final"]?.jsonPrimitive?.boolean    ?: false
             val speechFinal = obj["speech_final"]?.jsonPrimitive?.boolean ?: false
 
-            // Always track the freshest non-blank text for manual-stop / UtteranceEnd fallback
-            if (transcript.isNotBlank()) lastPartialText = transcript
+            val trimmed = transcript.trim()
+
+            val currentFullTranscript = synchronized(accumulatedFinalText) {
+                if (isFinal && trimmed.isNotEmpty()) {
+                    if (accumulatedFinalText.isNotEmpty()) {
+                        accumulatedFinalText.append(" ")
+                    }
+                    accumulatedFinalText.append(trimmed)
+                }
+
+                buildString {
+                    if (accumulatedFinalText.isNotEmpty()) {
+                        append(accumulatedFinalText.toString())
+                    }
+                    if (!isFinal && trimmed.isNotEmpty()) {
+                        if (isNotEmpty()) append(" ")
+                        append(trimmed)
+                    }
+                }.trim()
+            }
+
+            if (currentFullTranscript.isNotBlank()) {
+                lastPartialText = currentFullTranscript
+            }
 
             when {
                 // speech_final=true means Deepgram has detected end-of-utterance (endpointing).
@@ -497,18 +541,21 @@ class DeepgramSttEngine @Inject constructor(
                 // sends speech_final=true with is_final=false when it still has audio in-flight,
                 // which previously caused the session to stay in Listening forever.
                 speechFinal -> {
-                    val text = if (transcript.isNotBlank()) transcript else lastPartialText
+                    val text = if (currentFullTranscript.isNotBlank()) currentFullTranscript else lastPartialText
                     if (text.isNotEmpty() && !finalEmitted) {
                         reconnectAttempts = 0  // successful speech — reset reconnect budget
                         finalEmitted = true
                         _state.value = SttState.FinalResult(text)
                         isRecording = false
+                        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
                     }
                 }
-                // Phrase boundary with no endpoint yet — emit as partial
-                isFinal -> if (transcript.isNotBlank()) _state.value = SttState.PartialResult(transcript)
-                // Live interim result
-                else    -> if (transcript.isNotBlank()) _state.value = SttState.PartialResult(transcript)
+                // Partial update (phrase boundary or live interim)
+                else -> {
+                    if (currentFullTranscript.isNotBlank()) {
+                        _state.value = SttState.PartialResult(currentFullTranscript)
+                    }
+                }
             }
         } catch (_: Exception) {
             // Ignore malformed frames (keep-alives, metadata, etc.)

@@ -25,7 +25,7 @@ import com.techrifter.fluxvoice.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val SplashBg      = Color(0xFF02040D)
+private val SplashBackgroundColor = Color(0xFF080B16)
 
 @Composable
 fun SplashScreen(onComplete: () -> Unit) {
@@ -43,7 +43,7 @@ fun SplashScreen(onComplete: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(SplashBg),
+            .background(SplashBackgroundColor),
         contentAlignment = Alignment.Center
     ) {
         Column(

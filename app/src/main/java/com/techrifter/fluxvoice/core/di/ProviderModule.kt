@@ -4,6 +4,7 @@ import com.techrifter.fluxvoice.data.remote.provider.gemini.GeminiProvider
 import com.techrifter.fluxvoice.data.remote.provider.groq.GroqProvider
 import com.techrifter.fluxvoice.data.remote.provider.local.LocalLlmProvider
 import com.techrifter.fluxvoice.data.remote.provider.openai.OpenAiProvider
+import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterAiProvider
 import com.techrifter.fluxvoice.domain.model.ProviderType
 import com.techrifter.fluxvoice.domain.streaming.AiStreamingProvider
 import dagger.MapKey
@@ -48,6 +49,12 @@ abstract class ProviderModule {
         @IntoMap
         @ProviderTypeKey(ProviderType.OPENAI_COMPAT)
         fun provideOpenAiProvider(provider: OpenAiProvider): AiStreamingProvider = provider
+
+        @Provides
+        @Singleton
+        @IntoMap
+        @ProviderTypeKey(ProviderType.OPENROUTER)
+        fun provideOpenRouterAiProvider(provider: OpenRouterAiProvider): AiStreamingProvider = provider
 
         @Provides
         @Singleton

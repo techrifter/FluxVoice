@@ -38,6 +38,8 @@ dependencies {
     // OkHttp for WebSocket streaming
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 val javadocStubJar = tasks.register<Jar>("javadocJar") {

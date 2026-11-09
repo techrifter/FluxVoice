@@ -39,6 +39,12 @@ public interface FluxVoiceController {
     /** Dismiss the current error banner. */
     public fun dismissError()
 
+    /** Optional: dynamically adjust TTS speech rate (0.5–2.0). */
+    public fun setSpeechRate(rate: Float) {}
+
+    /** Optional: dynamically adjust TTS pitch (0.5–2.0). */
+    public fun setPitch(pitch: Float) {}
+
     /** Release all resources. Call from your ViewModel's `onCleared`. */
     public fun destroy()
 }

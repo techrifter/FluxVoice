@@ -21,6 +21,8 @@ local.properties
 # ── OS files ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+powershell.bat
+
 
 # ── Captures / profiling ──────────────────────────────────────────────────────
 captures/

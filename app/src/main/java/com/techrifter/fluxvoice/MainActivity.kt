@@ -21,8 +21,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState) // Hilt injects fields during this call
 
-        // Read splash preference synchronously — DataStore file read is <10ms at startup.
-        val splashEnabled = runBlocking { settingsRepository.getSettings().first().splashEnabled }
+        // Read startup preferences synchronously — DataStore file read is <10ms at startup.
+        val settings = runBlocking { settingsRepository.getSettings().first() }
+        val splashEnabled = settings.splashEnabled
+        val needsAuth = settings.anonymousUsername.isBlank()
 
         enableEdgeToEdge()
         setContent {
@@ -30,7 +32,8 @@ class MainActivity : AppCompatActivity() {
                 val navController = rememberNavController()
                 AppNavGraph(
                     navController  = navController,
-                    splashEnabled  = splashEnabled
+                    splashEnabled  = splashEnabled,
+                    needsAuth      = needsAuth
                 )
             }
         }

@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
                             )
                             llmProvider = OpenAiCompatibleLlmProvider(
                                 apiKey  = "YOUR_GROQ_KEY",
-                                modelId = "llama-3.3-70b-versatile"  // default
+                                modelId = "openai/gpt-oss-120b"  // default
                             )
                             ttsProvider = CartesiaTtsProvider(
                                 apiKey  = "YOUR_CARTESIA_KEY",

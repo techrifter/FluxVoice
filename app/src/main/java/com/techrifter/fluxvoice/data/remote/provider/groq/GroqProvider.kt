@@ -39,7 +39,7 @@ private const val GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completio
  * AI provider backed by the Groq inference platform (OpenAI-compatible API).
  *
  * Uses SSE streaming (`stream = true`) so tokens arrive with very low latency.
- * Default model: llama-3.3-70b-versatile — override via [GenerationConfig.modelId].
+ * Default model: openai/gpt-oss-120b — override via [GenerationConfig.modelId].
  */
 @Singleton
 class GroqProvider @Inject constructor(
@@ -64,7 +64,7 @@ class GroqProvider @Inject constructor(
 
         try {
             val request = buildRequest(messages, config)
-            Log.d(TAG, "REQUEST url=$GROQ_CHAT_URL model=${config.modelId} apiKey=${authConfig.apiKey.take(8)}…")
+            Log.d(TAG, "REQUEST url=$GROQ_CHAT_URL model=${config.modelId}")
 
             val response = httpClient.post(GROQ_CHAT_URL) {
                 contentType(ContentType.Application.Json)
@@ -79,13 +79,25 @@ class GroqProvider @Inject constructor(
                     buildString { while (!it.isClosedForRead) append(it.readUTF8Line() ?: break) }
                 }
                 Log.e(TAG, "ERROR body=$errorBody")
+                val parsedDetail = try {
+                    json.parseToJsonElement(errorBody).jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                } catch (e: Exception) { null }
+
                 val friendlyMessage = when (response.status.value) {
-                    400        -> "Bad request — check your model ID in Settings."
-                    401, 403   -> "Invalid Groq API key. Go to Settings → Credentials and verify it."
-                    404        -> "Model '${config.modelId}' not found on Groq. Check the model ID in Settings."
-                    429        -> "Groq rate limit reached. Wait a moment and try again."
+                    400        -> if (parsedDetail?.contains("decommissioned", ignoreCase = true) == true) {
+                        "Model '${config.modelId}' was decommissioned by Groq. Please switch to an active model in Studio or Settings."
+                    } else {
+                        parsedDetail ?: "Bad request: check your model ID in Settings."
+                    }
+                    401, 403   -> "Invalid Groq API key. Go to Key Vault or Settings to verify your key."
+                    404        -> "Model '${config.modelId}' not found on Groq. Please select an active model in Settings or Studio."
+                    429        -> if (parsedDetail?.contains("TPM", ignoreCase = true) == true) {
+                        "Groq rate limit reached on '${config.modelId}'. Please wait a moment or choose another model from the live catalog."
+                    } else {
+                        "Groq rate limit reached. Please wait a moment before trying again."
+                    }
                     500, 503   -> "Groq server error (${response.status.value}). Try again shortly."
-                    else       -> "HTTP ${response.status.value}: ${response.status.description}"
+                    else       -> parsedDetail ?: "HTTP ${response.status.value}: ${response.status.description}"
                 }
                 channel.send(StreamEvent.Error(Exception(friendlyMessage)))
                 return@channelFlow
@@ -103,10 +115,18 @@ class GroqProvider @Inject constructor(
                         if (data == "[DONE]") Log.d(TAG, "SSE [DONE] received, tokens=$tokenCount")
                         continue
                     }
-                    parseToken(data)?.let { token ->
-                        tokenCount++
-                        Log.v(TAG, "TOKEN #$tokenCount: $token")
-                        channel.send(StreamEvent.Token(token))
+                    parseChunk(data)?.let { chunk ->
+                        chunk.usage?.let { u ->
+                            channel.send(StreamEvent.Usage(u.promptTokens, u.completionTokens))
+                        }
+                        chunk.choices?.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }?.let { token ->
+                            tokenCount++
+                            Log.v(TAG, "TOKEN #$tokenCount: $token")
+                            channel.send(StreamEvent.Token(token))
+                        }
+                    }
+                    parseUsage(data)?.let { (p, c) ->
+                        channel.send(StreamEvent.Usage(p, c))
                     }
                 } else if (line.isNotBlank()) {
                     // Some models ignore stream=true and return a single complete JSON object.
@@ -132,6 +152,8 @@ class GroqProvider @Inject constructor(
     private fun buildRequest(messages: List<Message>, config: GenerationConfig): OpenAiRequest {
         val openAiMessages = mutableListOf<OpenAiMessage>()
 
+        val activeModel = config.modelId.ifBlank { "openai/gpt-oss-120b" }
+
         config.systemPrompt?.takeIf { it.isNotBlank() }?.let {
             openAiMessages += OpenAiMessage(role = "system", content = it)
         }
@@ -146,18 +168,17 @@ class GroqProvider @Inject constructor(
         }
 
         return OpenAiRequest(
-            model       = config.modelId,
+            model       = activeModel,
             messages    = openAiMessages,
             temperature = config.temperature,
             maxTokens   = config.maxOutputTokens
         )
     }
 
-    private fun parseToken(data: String): String? = try {
-        val chunk = json.decodeFromString<OpenAiStreamChunk>(data)
-        chunk.choices?.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }
+    private fun parseChunk(data: String): OpenAiStreamChunk? = try {
+        json.decodeFromString<OpenAiStreamChunk>(data)
     } catch (e: Exception) {
-        Log.w(TAG, "parseToken failed for data=$data  err=${e.message}")
+        Log.w(TAG, "parseChunk failed for data=$data  err=${e.message}")
         null
     }
 
@@ -170,6 +191,15 @@ class GroqProvider @Inject constructor(
             ?.takeIf { it.isNotEmpty() }
     } catch (e: Exception) {
         Log.w(TAG, "parseNonStreamingResponse failed: ${e.message}")
+        null
+    }
+
+    private fun parseUsage(data: String): Pair<Int, Int>? = try {
+        val usage = json.parseToJsonElement(data).jsonObject["usage"]?.jsonObject
+        val prompt = usage?.get("prompt_tokens")?.jsonPrimitive?.content?.toIntOrNull()
+        val completion = usage?.get("completion_tokens")?.jsonPrimitive?.content?.toIntOrNull()
+        if (prompt != null && completion != null) Pair(prompt, completion) else null
+    } catch (_: Exception) {
         null
     }
 }

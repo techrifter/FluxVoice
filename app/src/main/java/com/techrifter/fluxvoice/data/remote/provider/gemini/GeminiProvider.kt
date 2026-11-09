@@ -15,6 +15,7 @@ import com.techrifter.fluxvoice.domain.streaming.AiStreamingProvider
 import com.techrifter.fluxvoice.domain.streaming.ProviderCapabilities
 import com.techrifter.fluxvoice.domain.streaming.StreamEvent
 import io.ktor.client.HttpClient
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -28,6 +29,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -60,12 +63,13 @@ class GeminiProvider @Inject constructor(
 
         try {
             val request = buildRequest(messages, config)
-            val url = "$BASE_URL/${config.modelId}:streamGenerateContent"
+            val cleanModel = config.modelId.removePrefix("models/").ifBlank { "gemini-2.5-flash" }
+            val url = "$BASE_URL/$cleanModel:streamGenerateContent"
 
             var attempt = 0
             while (true) {
                 val response = httpClient.post(url) {
-                    parameter("key", authConfig.apiKey)
+                    header("x-goog-api-key", authConfig.apiKey)
                     parameter("alt", "sse")
                     contentType(ContentType.Application.Json)
                     setBody(request)
@@ -107,6 +111,7 @@ class GeminiProvider @Inject constructor(
                         val data = line.removePrefix("data: ").trim()
                         if (data.isEmpty()) continue
                         parseToken(data)?.let { token -> channel.send(StreamEvent.Token(token)) }
+                        parseUsage(data)?.let { (p, c) -> channel.send(StreamEvent.Usage(p, c)) }
                     }
                 }
                 channel.send(StreamEvent.Done)
@@ -155,5 +160,13 @@ class GeminiProvider @Inject constructor(
     } catch (_: Exception) {
         null
     }
-}
 
+    private fun parseUsage(data: String): Pair<Int, Int>? = try {
+        val usage = json.parseToJsonElement(data).jsonObject["usageMetadata"]?.jsonObject
+        val prompt = usage?.get("promptTokenCount")?.jsonPrimitive?.content?.toIntOrNull()
+        val candidates = usage?.get("candidatesTokenCount")?.jsonPrimitive?.content?.toIntOrNull()
+        if (prompt != null && candidates != null) Pair(prompt, candidates) else null
+    } catch (_: Exception) {
+        null
+    }
+}

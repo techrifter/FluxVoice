@@ -64,7 +64,14 @@ class OpenAiProvider @Inject constructor(
             }
 
             if (!response.status.isSuccess()) {
-                channel.send(StreamEvent.Error(Exception("HTTP ${response.status.value}: ${response.status.description}")))
+                val errorBody = response.bodyAsChannel().let {
+                    buildString { while (!it.isClosedForRead) append(it.readUTF8Line() ?: break) }
+                }
+                val detail = try {
+                    json.parseToJsonElement(errorBody).jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                } catch (e: Exception) { null }
+                val msg = detail ?: "HTTP ${response.status.value}: ${response.status.description}"
+                channel.send(StreamEvent.Error(Exception(msg)))
                 return@channelFlow
             }
 
@@ -74,7 +81,17 @@ class OpenAiProvider @Inject constructor(
                 if (line.startsWith("data: ")) {
                     val data = line.removePrefix("data: ").trim()
                     if (data.isEmpty() || data == "[DONE]") continue
-                    parseToken(data)?.let { token -> channel.send(StreamEvent.Token(token)) }
+                    parseChunk(data)?.let { chunk ->
+                        chunk.usage?.let { u ->
+                            channel.send(StreamEvent.Usage(u.promptTokens, u.completionTokens))
+                        }
+                        chunk.choices?.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }?.let { token ->
+                            channel.send(StreamEvent.Token(token))
+                        }
+                    }
+                    parseUsage(data)?.let { (p, c) ->
+                        channel.send(StreamEvent.Usage(p, c))
+                    }
                 } else if (line.isNotBlank()) {
                     parseNonStreamingResponse(line)?.let { fullText ->
                         channel.send(StreamEvent.Token(fullText))
@@ -107,16 +124,15 @@ class OpenAiProvider @Inject constructor(
         }
 
         return OpenAiRequest(
-            model = config.modelId,
+            model = config.modelId.ifBlank { "gpt-4o-mini" },
             messages = openAiMessages,
             temperature = config.temperature,
             maxTokens = config.maxOutputTokens
         )
     }
 
-    private fun parseToken(data: String): String? = try {
-        val chunk = json.decodeFromString<OpenAiStreamChunk>(data)
-        chunk.choices?.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }
+    private fun parseChunk(data: String): OpenAiStreamChunk? = try {
+        json.decodeFromString<OpenAiStreamChunk>(data)
     } catch (_: Exception) {
         null
     }
@@ -127,6 +143,15 @@ class OpenAiProvider @Inject constructor(
             ?.get("message")?.jsonObject
             ?.get("content")?.jsonPrimitive?.content
             ?.takeIf { it.isNotEmpty() }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun parseUsage(data: String): Pair<Int, Int>? = try {
+        val usage = json.parseToJsonElement(data).jsonObject["usage"]?.jsonObject
+        val prompt = usage?.get("prompt_tokens")?.jsonPrimitive?.content?.toIntOrNull()
+        val completion = usage?.get("completion_tokens")?.jsonPrimitive?.content?.toIntOrNull()
+        if (prompt != null && completion != null) Pair(prompt, completion) else null
     } catch (_: Exception) {
         null
     }

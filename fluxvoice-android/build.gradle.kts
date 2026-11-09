@@ -38,6 +38,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // WebRTC VAD — native GMM-based barge-in detector
     implementation("com.github.gkonovalov.android-vad:webrtc:2.0.10")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 val javadocStubJar = tasks.register<Jar>("javadocJar") {

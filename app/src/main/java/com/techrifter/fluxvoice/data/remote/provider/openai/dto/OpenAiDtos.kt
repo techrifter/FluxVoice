@@ -10,8 +10,14 @@ data class OpenAiRequest(
     val model: String,
     val messages: List<OpenAiMessage>,
     val stream: Boolean = true,
+    @SerialName("stream_options") val streamOptions: OpenAiStreamOptions? = OpenAiStreamOptions(includeUsage = true),
     val temperature: Float? = null,
     @SerialName("max_tokens") val maxTokens: Int? = null
+)
+
+@Serializable
+data class OpenAiStreamOptions(
+    @SerialName("include_usage") val includeUsage: Boolean = true
 )
 
 @Serializable
@@ -25,7 +31,15 @@ data class OpenAiMessage(
 @Serializable
 data class OpenAiStreamChunk(
     val id: String? = null,
-    val choices: List<OpenAiStreamChoice>? = null
+    val choices: List<OpenAiStreamChoice>? = null,
+    val usage: OpenAiUsage? = null
+)
+
+@Serializable
+data class OpenAiUsage(
+    @SerialName("prompt_tokens") val promptTokens: Int = 0,
+    @SerialName("completion_tokens") val completionTokens: Int = 0,
+    @SerialName("total_tokens") val totalTokens: Int = 0
 )
 
 @Serializable

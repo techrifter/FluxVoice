@@ -1,6 +1,8 @@
 package com.techrifter.fluxvoice.data.repository
 
 import com.techrifter.fluxvoice.data.local.datastore.SettingsDataStore
+import com.techrifter.fluxvoice.data.security.KeyVault
+import androidx.datastore.preferences.core.Preferences
 import com.techrifter.fluxvoice.domain.model.AppSettings
 import com.techrifter.fluxvoice.domain.model.ProviderType
 import com.techrifter.fluxvoice.domain.model.SttProvider
@@ -12,7 +14,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsRepositoryImpl @Inject constructor(
-    private val dataStore: SettingsDataStore
+    private val dataStore: SettingsDataStore,
+    private val keyVault: KeyVault
 ) : SettingsRepository {
 
     override fun getSettings(): Flow<AppSettings> = dataStore.settings
@@ -32,11 +35,14 @@ class SettingsRepositoryImpl @Inject constructor(
         p[SettingsDataStore.BACKCHANNEL_ENABLED] = true
         p[SettingsDataStore.VOICE_MODE]          = VoiceMode.STANDARD.name
         p[SettingsDataStore.TTS_ENABLED]         = true
+        p[SettingsDataStore.TTS_PROVIDER]        = "cartesia"
+        p[SettingsDataStore.CARTESIA_VOICE_ID]   = "638efaaa-4d0c-442e-b701-3fae16aad012"
+        p[SettingsDataStore.SYSTEM_PROMPT]       = "You are Flux Fast, an ultra-low-latency voice assistant. Deliver immediate, high-signal answers in 1 to 2 punchy sentences. Never use preamble, pleasantries, or filler."
     }
 
     override suspend fun applyThinkingPreset() = dataStore.update { p ->
         p[SettingsDataStore.PROVIDER_TYPE]       = ProviderType.GEMINI.name
-        p[SettingsDataStore.MODEL_ID]            = "gemini-2.5-pro"
+        p[SettingsDataStore.MODEL_ID]            = "gemini-2.5-flash"
         p[SettingsDataStore.TEMPERATURE]         = 0.3f
         p[SettingsDataStore.STT_PROVIDER]        = SttProvider.DEEPGRAM.name
         p[SettingsDataStore.MAX_CONTEXT_TURNS]   = 20
@@ -45,12 +51,16 @@ class SettingsRepositoryImpl @Inject constructor(
         p[SettingsDataStore.BACKCHANNEL_ENABLED] = false
         p[SettingsDataStore.VOICE_MODE]          = VoiceMode.STANDARD.name
         p[SettingsDataStore.TTS_ENABLED]         = true
-        p[SettingsDataStore.SYSTEM_PROMPT]       = "You are a thoughtful voice assistant. Reason carefully before responding. Be accurate and thorough — explain your thinking when it helps, but stay conversational and avoid unnecessary filler."
+        p[SettingsDataStore.TTS_PROVIDER]        = "cartesia"
+        p[SettingsDataStore.CARTESIA_VOICE_ID]   = "638efaaa-4d0c-442e-b701-3fae16aad012"
+        p[SettingsDataStore.SYSTEM_PROMPT]       = "You are Flux Reason, an expert voice advisor for deep reasoning and system architecture. Analyze questions with first-principles depth, then articulate your answer in clear, flowing spoken paragraphs without bullet points or outlines."
     }
 
     override suspend fun applyCustomPreset() = dataStore.update { p ->
         p[SettingsDataStore.PROVIDER_TYPE]       = ProviderType.GROQ.name
-        p[SettingsDataStore.MODEL_ID]            = ProviderType.GROQ.defaultModel
+        p[SettingsDataStore.MODEL_ID]            = ""
+        p[SettingsDataStore.CARTESIA_VOICE_ID]   = ""
+        p[SettingsDataStore.LOCAL_LLM_URL]       = ""
         p[SettingsDataStore.TEMPERATURE]         = 0.7f
         p[SettingsDataStore.STT_PROVIDER]        = SttProvider.DEEPGRAM.name
         p[SettingsDataStore.MAX_CONTEXT_TURNS]   = 10
@@ -59,7 +69,8 @@ class SettingsRepositoryImpl @Inject constructor(
         p[SettingsDataStore.BACKCHANNEL_ENABLED] = false
         p[SettingsDataStore.VOICE_MODE]          = VoiceMode.STANDARD.name
         p[SettingsDataStore.TTS_ENABLED]         = true
-        p[SettingsDataStore.SYSTEM_PROMPT]       = "You are a helpful voice assistant. Keep responses concise. Be friendly and conversational."
+        p[SettingsDataStore.TTS_PROVIDER]        = "cartesia"
+        p[SettingsDataStore.SYSTEM_PROMPT]       = com.techrifter.fluxvoice.domain.model.PipelineConfig.DEFAULT_SYSTEM_PROMPT
     }
 
     // ── Voice Mode ────────────────────────────────────────────────────────────
@@ -74,14 +85,21 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun updateProviderType(value: String) =
         dataStore.update { it[SettingsDataStore.PROVIDER_TYPE] = value }
 
-    override suspend fun updateGeminiApiKey(value: String) =
-        dataStore.update { it[SettingsDataStore.GEMINI_API_KEY] = value }
+    override suspend fun updateGeminiApiKey(value: String) {
+        saveApiKey("gemini", SettingsDataStore.GEMINI_API_KEY, value)
+    }
 
-    override suspend fun updateOpenAiApiKey(value: String) =
-        dataStore.update { it[SettingsDataStore.OPENAI_API_KEY] = value }
+    override suspend fun updateOpenAiApiKey(value: String) {
+        saveApiKey("openai", SettingsDataStore.OPENAI_API_KEY, value)
+    }
 
-    override suspend fun updateGroqApiKey(value: String) =
-        dataStore.update { it[SettingsDataStore.GROQ_API_KEY] = value }
+    override suspend fun updateGroqApiKey(value: String) {
+        saveApiKey("groq", SettingsDataStore.GROQ_API_KEY, value)
+    }
+
+    override suspend fun updateOpenRouterApiKey(value: String) {
+        saveApiKey("openrouter", SettingsDataStore.OPENROUTER_API_KEY, value)
+    }
 
     override suspend fun updateLocalLlmUrl(value: String) =
         dataStore.update { it[SettingsDataStore.LOCAL_LLM_URL] = value }
@@ -99,9 +117,14 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun updateElevenLabsAgentId(value: String) =
         dataStore.update { it[SettingsDataStore.ELEVENLABS_AGENT_ID] = value }
 
+    override suspend fun updateElevenLabsApiKey(value: String) {
+        saveApiKey("elevenlabs", SettingsDataStore.ELEVENLABS_API_KEY, value)
+    }
+
     // ── Deepgram ──────────────────────────────────────────────────────────────
-    override suspend fun updateDeepgramApiKey(value: String) =
-        dataStore.update { it[SettingsDataStore.DEEPGRAM_API_KEY] = value }
+    override suspend fun updateDeepgramApiKey(value: String) {
+        saveApiKey("deepgram", SettingsDataStore.DEEPGRAM_API_KEY, value)
+    }
 
     // ── Voice Conversation ────────────────────────────────────────────────────
     override suspend fun updateMaxContextTurns(value: Int) =
@@ -111,6 +134,9 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun updateTtsEnabled(value: Boolean) =
         dataStore.update { it[SettingsDataStore.TTS_ENABLED] = value }
 
+    override suspend fun updateTtsProvider(value: String) =
+        dataStore.update { it[SettingsDataStore.TTS_PROVIDER] = value }
+
     override suspend fun updateTtsSpeechRate(value: Float) =
         dataStore.update { it[SettingsDataStore.TTS_SPEECH_RATE] = value }
 
@@ -118,8 +144,9 @@ class SettingsRepositoryImpl @Inject constructor(
         dataStore.update { it[SettingsDataStore.TTS_PITCH] = value }
 
     // ── Cartesia TTS ──────────────────────────────────────────────────────────
-    override suspend fun updateCartesiaApiKey(value: String) =
-        dataStore.update { it[SettingsDataStore.CARTESIA_API_KEY] = value }
+    override suspend fun updateCartesiaApiKey(value: String) {
+        saveApiKey("cartesia", SettingsDataStore.CARTESIA_API_KEY, value)
+    }
 
     override suspend fun updateCartesiaVoiceId(value: String) =
         dataStore.update { it[SettingsDataStore.CARTESIA_VOICE_ID] = value }
@@ -136,4 +163,22 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun updateSplashEnabled(value: Boolean) =
         dataStore.update { it[SettingsDataStore.SPLASH_ENABLED] = value }
+
+    // ── Anonymous Identity & Telemetry ────────────────────────────────────────
+    override suspend fun updateAnonymousIdentity(username: String) =
+        dataStore.update {
+            it[SettingsDataStore.ANONYMOUS_USERNAME] = username
+        }
+
+    override suspend fun updateTelemetryOptIn(value: Boolean) =
+        dataStore.update { it[SettingsDataStore.TELEMETRY_OPT_IN] = value }
+
+    private suspend fun saveApiKey(
+        providerId: String,
+        preferenceKey: Preferences.Key<String>,
+        value: String
+    ) {
+        keyVault.setKey(providerId, value.trim())
+        dataStore.update { it.remove(preferenceKey) }
+    }
 }

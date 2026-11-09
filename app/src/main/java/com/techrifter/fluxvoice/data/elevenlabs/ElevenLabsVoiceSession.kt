@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
@@ -12,6 +13,7 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.util.Base64
 import android.util.Log
+import com.techrifter.fluxvoice.data.security.KeyVault
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +60,8 @@ private const val CHUNK_MS = 100  // send audio in 100 ms chunks
  */
 @Singleton
 class ElevenLabsVoiceSession @Inject constructor(
-    @param:ApplicationContext private val appContext: Context
+    @param:ApplicationContext private val appContext: Context,
+    private val keyVault: KeyVault
 ) {
 
     // ── Public state ───────────────────────────────────────────────────────────
@@ -123,29 +126,63 @@ class ElevenLabsVoiceSession @Inject constructor(
         else
             "$BASE_URL?agent_id=$agentId"
 
-        val request = Request.Builder().url(urlStr).build()
+        val apiKey = keyVault.getElevenLabsKey().trim()
+        val requestBuilder = Request.Builder().url(urlStr)
+        if (apiKey.isNotBlank()) {
+            requestBuilder.header("xi-api-key", apiKey)
+        }
+        val request = requestBuilder.build()
 
         websocket = httpClient.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "WebSocket opened")
+                Log.d(TAG, "WebSocket opened, awaiting initiation handshake")
                 _status.value = "connected"
-                startMicCapture(webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 handleServerMessage(webSocket, text)
             }
 
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "WebSocket closing from server: code=$code reason=$reason")
+                stopMic()
+                if (code != 1000) {
+                    val userFriendlyReason = when {
+                        reason.contains("does not exist", ignoreCase = true) || code == 3000 ->
+                            "ElevenLabs: Agent ID not found. Note: an Agent ID is from Conversational AI (elevenlabs.io/app/conversational-ai), not a TTS Voice ID."
+                        reason.isNotBlank() -> "ElevenLabs: $reason"
+                        else -> "Session closed by server (code $code)"
+                    }
+                    _error.value = userFriendlyReason
+                }
+                webSocket.close(code, reason)
+                resetState()
+                cleanupAudio()
+            }
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}", t)
-                _error.value = "Connection failed: ${t.message ?: "unknown"}"
+                stopMic()
+                if (_error.value == null) {
+                    _error.value = "Connection failed: ${t.message ?: "unknown"}"
+                }
                 resetState()
                 cleanupAudio()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed: $code $reason")
+                stopMic()
+                if (code != 1000 && _error.value == null) {
+                    val userFriendlyReason = when {
+                        reason.contains("does not exist", ignoreCase = true) || code == 3000 ->
+                            "ElevenLabs: Agent ID not found. Note: an Agent ID is from Conversational AI (elevenlabs.io/app/conversational-ai), not a TTS Voice ID."
+                        reason.isNotBlank() -> "ElevenLabs: $reason"
+                        else -> "Session closed by server (code $code)"
+                    }
+                    _error.value = userFriendlyReason
+                }
                 resetState()
                 cleanupAudio()
             }
@@ -154,8 +191,7 @@ class ElevenLabsVoiceSession @Inject constructor(
 
     /** Ends the current session, stops audio, and resets all state. */
     fun stop() {
-        micJob?.cancel()
-        micJob = null
+        stopMic()
         websocket?.close(1000, "User ended session")
         websocket = null
         resetState()
@@ -191,6 +227,7 @@ class ElevenLabsVoiceSession @Inject constructor(
                     }
                     webSocket.send(initData.toString())
                     _conversationMode.value = "listening"
+                    startMicCapture(webSocket)
                 }
 
                 "audio" -> {
@@ -281,7 +318,11 @@ class ElevenLabsVoiceSession @Inject constructor(
                     if (read > 0 && !isMuted) {
                         val b64 = Base64.encodeToString(buf, 0, read, Base64.NO_WRAP)
                         val msg = buildJsonObject { put("user_audio_chunk", b64) }
-                        webSocket.send(msg.toString())
+                        val enqueued = webSocket.send(msg.toString())
+                        if (!enqueued) {
+                            Log.w(TAG, "WebSocket queue full or closed, stopping mic stream")
+                            break
+                        }
                     }
                 }
             } finally {
@@ -295,6 +336,8 @@ class ElevenLabsVoiceSession @Inject constructor(
 
     @Synchronized
     private fun playPcmChunk(pcm: ByteArray) {
+        if (pcm.isEmpty()) return
+        val boosted = boostPcmGain(pcm, 1.35f)
         if (audioTrack == null || audioTrack!!.state == AudioTrack.STATE_UNINITIALIZED) {
             val minBuf = AudioTrack.getMinBufferSize(
                 OUTPUT_SAMPLE_RATE,
@@ -304,7 +347,9 @@ class ElevenLabsVoiceSession @Inject constructor(
             audioTrack = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        // USAGE_ASSISTANT routes audio through the main loudspeaker at full media
+                        // volume rather than the quiet ear receiver speaker used by VOICE_COMMUNICATION.
+                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )
@@ -318,14 +363,50 @@ class ElevenLabsVoiceSession @Inject constructor(
                 .setBufferSizeInBytes(minBuf * 4)
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
+            runCatching {
+                audioTrack?.setVolume(1.0f)
+                val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val speaker = audioManager?.availableCommunicationDevices?.firstOrNull {
+                        it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    }
+                    if (speaker != null) {
+                        audioManager.setCommunicationDevice(speaker)
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audioManager?.isSpeakerphoneOn = true
+                }
+            }
             audioTrack!!.play()
         }
-        try { audioTrack!!.write(pcm, 0, pcm.size) } catch (e: Exception) {
+        try { audioTrack!!.write(boosted, 0, boosted.size) } catch (e: Exception) {
             Log.w(TAG, "AudioTrack write failed: ${e.message}")
         }
     }
 
+    private fun boostPcmGain(pcm: ByteArray, gain: Float = 1.35f): ByteArray {
+        if (pcm.isEmpty() || gain == 1.0f) return pcm
+        val out = ByteArray(pcm.size)
+        var i = 0
+        while (i < pcm.size - 1) {
+            val low = pcm[i].toInt() and 0xFF
+            val high = pcm[i + 1].toInt()
+            val sample = (high shl 8) or low
+            val boosted = (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[i] = (boosted and 0xFF).toByte()
+            out[i + 1] = ((boosted shr 8) and 0xFF).toByte()
+            i += 2
+        }
+        return out
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private fun stopMic() {
+        micJob?.cancel()
+        micJob = null
+    }
 
     private fun resetState() {
         _status.value = "disconnected"
@@ -333,6 +414,7 @@ class ElevenLabsVoiceSession @Inject constructor(
     }
 
     private fun cleanupAudio() {
+        stopMic()
         try { audioTrack?.stop() } catch (_: Exception) {}
         try { audioTrack?.release() } catch (_: Exception) {}
         audioTrack = null

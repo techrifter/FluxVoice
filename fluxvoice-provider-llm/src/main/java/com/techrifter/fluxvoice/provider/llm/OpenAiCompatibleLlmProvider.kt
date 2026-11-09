@@ -10,6 +10,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "OpenAiCompatibleLlmProvider"
 private const val GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -55,14 +57,18 @@ private const val GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completio
  * ```
  *
  * @param apiKey   API key for the provider. Pass an empty string for keyless endpoints (e.g. Ollama).
- * @param modelId  Model ID to request. Defaults to `llama-3.3-70b-versatile` (Groq).
+ * @param modelId  Model ID to request. Defaults to `openai/gpt-oss-120b` (Groq).
  * @param baseUrl  Chat completions endpoint. Defaults to Groq's URL. Pass your own for other providers or local endpoints.
+ * @param customHeaders Additional HTTP headers to attach to each request (e.g. OpenRouter attribution headers).
  */
 public class OpenAiCompatibleLlmProvider(
     private val apiKey: String,
-    private val modelId: String = "llama-3.3-70b-versatile",
+    private val modelId: String = "openai/gpt-oss-120b",
     private val baseUrl: String = GROQ_BASE_URL,
+    private val customHeaders: Map<String, String> = emptyMap(),
 ) : LlmProvider {
+
+    private val normalizedBaseUrl: String = normalizeEndpoint(baseUrl)
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -70,6 +76,12 @@ public class OpenAiCompatibleLlmProvider(
     }
 
     private val httpClient = HttpClient(OkHttp) {
+        engine {
+            config {
+                connectTimeout(30, TimeUnit.SECONDS)
+                readTimeout(120, TimeUnit.SECONDS)
+            }
+        }
         install(ContentNegotiation) { json(json) }
     }
 
@@ -80,9 +92,10 @@ public class OpenAiCompatibleLlmProvider(
         send(StreamEvent.Start)
         try {
             val request = buildRequest(messages, config)
-            val response = httpClient.post(baseUrl) {
+            val response = httpClient.post(normalizedBaseUrl) {
                 contentType(ContentType.Application.Json)
-                bearerAuth(apiKey)
+                if (apiKey.isNotBlank()) bearerAuth(apiKey.trim())
+                customHeaders.forEach { (key, value) -> header(key, value) }
                 setBody(request)
             }
             Log.d(TAG, "HTTP ${response.status.value}")
@@ -92,13 +105,17 @@ public class OpenAiCompatibleLlmProvider(
                     val ch = response.bodyAsChannel()
                     while (!ch.isClosedForRead) append(ch.readUTF8Line() ?: break)
                 }
+                val detail = try {
+                    json.parseToJsonElement(body).jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                } catch (_: Exception) { null }
+
                 val msg = when (response.status.value) {
-                    400      -> "Bad request — check your model ID."
-                    401, 403 -> "Invalid LLM API key. Update it in your config."
-                    404      -> "Model '$modelId' not found."
-                    429      -> "LLM Rate limit reached. Wait a moment and try again."
+                    400      -> detail ?: "Bad request: check your model ID or parameters."
+                    401, 403 -> detail ?: "Invalid LLM API key. Update it in your config."
+                    404      -> detail ?: "Model '$modelId' not found."
+                    429      -> detail ?: "LLM Rate limit reached. Wait a moment and try again."
                     500, 503 -> "LLM Server error (${response.status.value}). Try again shortly."
-                    else     -> "HTTP ${response.status.value}: $body"
+                    else     -> detail ?: "HTTP ${response.status.value}: $body"
                 }
                 send(StreamEvent.Error(Exception(msg)))
                 return@channelFlow
@@ -107,10 +124,16 @@ public class OpenAiCompatibleLlmProvider(
             val byteChannel = response.bodyAsChannel()
             while (!byteChannel.isClosedForRead) {
                 val line = byteChannel.readUTF8Line() ?: break
-                if (line.startsWith("data: ")) {
-                    val data = line.removePrefix("data: ").trim()
+                if (line.startsWith("data:", ignoreCase = true)) {
+                    val data = line.substring(5).trim()
                     if (data.isEmpty() || data == "[DONE]") continue
+                    parseUsage(data)?.let { (prompt, completion) ->
+                        send(StreamEvent.Usage(prompt, completion))
+                    }
                     parseToken(data)?.let { send(StreamEvent.Token(it)) }
+                } else if (line.startsWith(":") || line.startsWith("event:", ignoreCase = true) || line.startsWith("id:", ignoreCase = true) || line.startsWith("retry:", ignoreCase = true)) {
+                    // SSE comments (keepalive ping) and event/id metadata lines
+                    continue
                 } else if (line.isNotBlank()) {
                     parseNonStreamingResponse(line)?.let { send(StreamEvent.Token(it)) }
                 }
@@ -137,22 +160,29 @@ public class OpenAiCompatibleLlmProvider(
             msgs += ChatMessage(role, m.content)
         }
         return ChatRequest(
-            model       = config.modelId.ifBlank { modelId },
-            messages    = msgs,
-            temperature = config.temperature,
-            maxTokens   = config.maxOutputTokens.takeIf { it > 0 }
+            model         = config.modelId.ifBlank { modelId },
+            messages      = msgs,
+            temperature   = config.temperature,
+            maxTokens     = config.maxOutputTokens.takeIf { it > 0 },
+            streamOptions = StreamOptions(includeUsage = true)
         )
     }
 
-    private fun parseToken(data: String): String? = try {
+    internal fun parseToken(data: String): String? = try {
         val chunk = json.decodeFromString<StreamChunk>(data)
         chunk.choices?.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }
     } catch (e: Exception) {
-        Log.w(TAG, "parseToken failed: ${e.message}")
         null
     }
 
-    private fun parseNonStreamingResponse(data: String): String? = try {
+    internal fun parseUsage(data: String): Pair<Int, Int>? = try {
+        val chunk = json.decodeFromString<StreamChunk>(data)
+        chunk.usage?.let { Pair(it.promptTokens, it.completionTokens) }
+    } catch (e: Exception) {
+        null
+    }
+
+    internal fun parseNonStreamingResponse(data: String): String? = try {
         Json.parseToJsonElement(data).jsonObject["choices"]?.jsonArray
             ?.firstOrNull()?.jsonObject
             ?.get("message")?.jsonObject
@@ -160,6 +190,22 @@ public class OpenAiCompatibleLlmProvider(
             ?.takeIf { it.isNotEmpty() }
     } catch (e: Exception) {
         null
+    }
+
+    internal fun getModelIdForTesting(): String = modelId
+    internal fun getBaseUrlForTesting(): String = normalizedBaseUrl
+
+    internal companion object {
+        internal fun normalizeEndpoint(url: String): String {
+            val trimmed = url.trim().trimEnd('/')
+            return when {
+                trimmed.isBlank() -> GROQ_BASE_URL
+                trimmed.endsWith("/chat/completions") -> trimmed
+                trimmed.endsWith("/v1") -> "$trimmed/chat/completions"
+                !trimmed.contains('/') || trimmed.substringAfter("://").indexOf('/') == -1 -> "$trimmed/v1/chat/completions"
+                else -> "$trimmed/chat/completions"
+            }
+        }
     }
 }
 
@@ -171,7 +217,13 @@ private data class ChatRequest(
     val messages: List<ChatMessage>,
     val stream: Boolean = true,
     val temperature: Float? = null,
-    @SerialName("max_tokens") val maxTokens: Int? = null
+    @SerialName("max_tokens") val maxTokens: Int? = null,
+    @SerialName("stream_options") val streamOptions: StreamOptions? = null
+)
+
+@Serializable
+private data class StreamOptions(
+    @SerialName("include_usage") val includeUsage: Boolean = true
 )
 
 @Serializable
@@ -179,7 +231,15 @@ private data class ChatMessage(val role: String, val content: String)
 
 @Serializable
 private data class StreamChunk(
-    val choices: List<StreamChoice>? = null
+    val choices: List<StreamChoice>? = null,
+    val usage: StreamUsage? = null
+)
+
+@Serializable
+private data class StreamUsage(
+    @SerialName("prompt_tokens") val promptTokens: Int = 0,
+    @SerialName("completion_tokens") val completionTokens: Int = 0,
+    @SerialName("total_tokens") val totalTokens: Int = 0
 )
 
 @Serializable

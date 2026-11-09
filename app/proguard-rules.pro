@@ -29,3 +29,22 @@
 -keepattributes *Annotation*
 -keepattributes Signature
 
+# ── Kotlinx Serialization & DTOs ──────────────────────────────────────────────
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keepclassmembers class * {
+    @kotlinx.serialization.Serializable <fields>;
+}
+-keepclassmembers class * {
+    @kotlinx.serialization.SerialName <fields>;
+}
+-keep class * implements kotlinx.serialization.KSerializer { *; }
+-keep class com.techrifter.fluxvoice.data.remote.provider.**.dto.** { *; }
+
+# ── Room & Persistence ────────────────────────────────────────────────────────
+-keep class androidx.room.** { *; }
+-keep class com.techrifter.fluxvoice.data.local.db.** { *; }
+
+# ── Domain & Telemetry Models ─────────────────────────────────────────────────
+-keep class com.techrifter.fluxvoice.domain.model.** { *; }
+-keep class com.techrifter.fluxvoice.core.model.** { *; }
+

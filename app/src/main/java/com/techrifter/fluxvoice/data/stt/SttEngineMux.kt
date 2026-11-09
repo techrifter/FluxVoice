@@ -2,6 +2,7 @@ package com.techrifter.fluxvoice.data.stt
 
 import com.techrifter.fluxvoice.data.local.datastore.SettingsDataStore
 import com.techrifter.fluxvoice.domain.model.SttProvider
+import com.techrifter.fluxvoice.domain.pipeline.PipelineSessionManager
 import com.techrifter.fluxvoice.domain.stt.SttEngine
 import com.techrifter.fluxvoice.domain.stt.SttState
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +32,10 @@ import javax.inject.Singleton
 class SttEngineMux @Inject constructor(
     private val whisper:  WhisperSttEngine,
     private val deepgram: DeepgramSttEngine,
-    settingsDataStore: SettingsDataStore
+    private val groqWhisper: GroqWhisperSttEngine,
+    private val customStt: CustomSttEngine,
+    settingsDataStore: SettingsDataStore,
+    pipelineSessionManager: PipelineSessionManager
 ) : SttEngine {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -50,11 +54,22 @@ class SttEngineMux @Inject constructor(
 
     init {
         scope.launch {
+            pipelineSessionManager.observeActivePipeline().collect { pipeline ->
+                if (pipeline != null && pipeline.sttProviderId.lowercase() == "custom") {
+                    customStt.activeEndpointUrl = pipeline.customEndpointUrl
+                    customStt.activeModelId = pipeline.sttModelId.ifBlank { "whisper-1" }
+                }
+            }
+        }
+
+        scope.launch {
             @OptIn(ExperimentalCoroutinesApi::class)
             provider.flatMapLatest { p ->
                 when (p) {
-                    SttProvider.WHISPER   -> whisper.state
-                    SttProvider.DEEPGRAM  -> deepgram.state
+                    SttProvider.WHISPER      -> whisper.state
+                    SttProvider.DEEPGRAM     -> deepgram.state
+                    SttProvider.GROQ_WHISPER -> groqWhisper.state
+                    SttProvider.CUSTOM       -> customStt.state
                 }
             }.collect { _state.value = it }
         }
@@ -69,11 +84,15 @@ class SttEngineMux @Inject constructor(
     override fun destroy() {
         whisper.destroy()
         deepgram.destroy()
+        groqWhisper.destroy()
+        customStt.destroy()
     }
 
     private fun activeEngine(): SttEngine = when (provider.value) {
-        SttProvider.WHISPER  -> whisper
-        SttProvider.DEEPGRAM -> deepgram
+        SttProvider.WHISPER      -> whisper
+        SttProvider.DEEPGRAM     -> deepgram
+        SttProvider.GROQ_WHISPER -> groqWhisper
+        SttProvider.CUSTOM       -> customStt
     }
 }
 
