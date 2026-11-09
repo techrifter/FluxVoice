@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -12,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId = "com.techrifter.fluxvoice"
-        minSdk = 35
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -72,10 +73,14 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // Room removed — voice conversations use in-memory history
+    // Room Database
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 
-    // DataStore
+    // DataStore & Security
     implementation(libs.datastore.preferences)
+    implementation(libs.androidx.security.crypto)
 
     // Ktor
     implementation(libs.ktor.client.core)
@@ -90,6 +95,12 @@ dependencies {
 
     // WebRTC VAD — native GMM-based voice activity detector (JitPack)
     implementation("com.github.gkonovalov.android-vad:webrtc:2.0.10")
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
 
     // Testing
     testImplementation(libs.junit)

@@ -60,7 +60,8 @@ private const val PRE_WARM_MAX_AGE_MS = 25_000L
  */
 public class DeepgramSttProvider(
     private val apiKey: String,
-    private val model: String = "nova-3"
+    private val model: String = "nova-3",
+    private val endpointingMs: Int = 500
 ) : SttProvider {
 
     private val _state = MutableStateFlow<SttState>(SttState.Idle)
@@ -75,6 +76,7 @@ public class DeepgramSttProvider(
     @Volatile private var finalEmitted    = false
     @Volatile private var sessionId       = 0L
     @Volatile private var reconnectAttempts = 0
+    private val accumulatedFinalText = StringBuilder()
 
     private val okClient = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -88,7 +90,7 @@ public class DeepgramSttProvider(
         "&channels=1" +
         "&interim_results=true" +
         "&smart_format=true" +
-        "&endpointing=500" +
+        "&endpointing=$endpointingMs" +
         "&utterance_end_ms=1500"
 
     // ── Pre-warm ──────────────────────────────────────────────────────────────
@@ -129,7 +131,7 @@ public class DeepgramSttProvider(
                 if (apiKey.isBlank()) return@launch
                 val delegating = DelegatingListener()
                 val ws = okClient.newWebSocket(
-                    Request.Builder().url(deepgramUrl).header("Authorization", "Token $apiKey").build(),
+                    Request.Builder().url(deepgramUrl).header("Authorization", "Token ${apiKey.trim()}").build(),
                     delegating
                 )
                 delegating.awaitOpen()
@@ -147,6 +149,7 @@ public class DeepgramSttProvider(
         preConnectJob?.cancel()
         isRecording = false
         sessionId++
+        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
         activeSocket?.cancel()
         activeSocket = null
         recordingJob?.cancel()
@@ -156,10 +159,13 @@ public class DeepgramSttProvider(
     override fun stopListening() {
         isRecording = false
         if (!finalEmitted) {
-            val pending = lastPartialText
+            val pending = synchronized(accumulatedFinalText) {
+                if (lastPartialText.isNotBlank()) lastPartialText else accumulatedFinalText.toString().trim()
+            }
             if (pending.isNotEmpty()) {
                 finalEmitted = true
                 _state.value = SttState.FinalResult(pending)
+                synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
             }
         }
         runCatching { activeSocket?.send("""{"type":"CloseStream"}""") }
@@ -168,6 +174,7 @@ public class DeepgramSttProvider(
     override fun destroy() {
         isRecording = false
         sessionId++
+        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
         preConnectJob?.cancel()
         preWarmSocket.getAndSet(null)?.cancel()
         preWarmListener.set(null)
@@ -183,6 +190,7 @@ public class DeepgramSttProvider(
         val myId = sessionId
         lastPartialText = ""
         finalEmitted    = false
+        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
 
         if (apiKey.isBlank()) {
             _state.value = SttState.Error(
@@ -252,7 +260,7 @@ public class DeepgramSttProvider(
         } else {
             preSocket?.cancel()
             okClient.newWebSocket(
-                Request.Builder().url(deepgramUrl).header("Authorization", "Token $apiKey").build(),
+                Request.Builder().url(deepgramUrl).header("Authorization", "Token ${apiKey.trim()}").build(),
                 listener
             )
         }
@@ -298,11 +306,20 @@ public class DeepgramSttProvider(
 
         var aec: AcousticEchoCanceler? = null
         var ns: NoiseSuppressor? = null
-        if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(ar.audioSessionId)?.also { it.enabled = true }
-        if (NoiseSuppressor.isAvailable())       ns  = NoiseSuppressor.create(ar.audioSessionId)?.also { it.enabled = true }
+        if (AcousticEchoCanceler.isAvailable()) aec = runCatching { AcousticEchoCanceler.create(ar.audioSessionId)?.also { it.enabled = true } }.getOrNull()
+        if (NoiseSuppressor.isAvailable())       ns  = runCatching { NoiseSuppressor.create(ar.audioSessionId)?.also { it.enabled = true } }.getOrNull()
+
+        try {
+            ar.startRecording()
+        } catch (e: Exception) {
+            ar.release()
+            aec?.release()
+            ns?.release()
+            _state.value = SttState.Error("Failed to start audio recording: ${e.message}")
+            return
+        }
 
         isRecording = true
-        ar.startRecording()
         if (sessionId == myId) _state.value = SttState.Listening
 
         val buf = ByteArray(bufSize)
@@ -327,17 +344,23 @@ public class DeepgramSttProvider(
         runCatching { ws.send("""{"type":"CloseStream"}""") }
     }
 
-    private fun handleMessage(json: String, myId: Long) {
+    internal fun handleMessage(json: String, myId: Long = sessionId) {
         try {
             val obj  = Json.parseToJsonElement(json).jsonObject
             val type = obj["type"]?.jsonPrimitive?.content ?: return
             if (sessionId != myId) return
 
             if (type == "UtteranceEnd") {
-                if (!finalEmitted && lastPartialText.isNotEmpty()) {
-                    finalEmitted = true
-                    _state.value = SttState.FinalResult(lastPartialText)
-                    isRecording  = false
+                if (!finalEmitted) {
+                    val pending = synchronized(accumulatedFinalText) {
+                        if (lastPartialText.isNotBlank()) lastPartialText else accumulatedFinalText.toString().trim()
+                    }
+                    if (pending.isNotEmpty()) {
+                        finalEmitted = true
+                        _state.value = SttState.FinalResult(pending)
+                        isRecording  = false
+                        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
+                    }
                 }
                 return
             }
@@ -350,20 +373,59 @@ public class DeepgramSttProvider(
             val isFinal     = obj["is_final"]?.jsonPrimitive?.boolean    ?: false
             val speechFinal = obj["speech_final"]?.jsonPrimitive?.boolean ?: false
 
-            if (transcript.isNotBlank()) lastPartialText = transcript
+            val trimmed = transcript.trim()
+
+            val currentFullTranscript = synchronized(accumulatedFinalText) {
+                if (isFinal && trimmed.isNotEmpty()) {
+                    if (accumulatedFinalText.isNotEmpty()) {
+                        accumulatedFinalText.append(" ")
+                    }
+                    accumulatedFinalText.append(trimmed)
+                }
+
+                buildString {
+                    if (accumulatedFinalText.isNotEmpty()) {
+                        append(accumulatedFinalText.toString())
+                    }
+                    if (!isFinal && trimmed.isNotEmpty()) {
+                        if (isNotEmpty()) append(" ")
+                        append(trimmed)
+                    }
+                }.trim()
+            }
+
+            if (currentFullTranscript.isNotBlank()) {
+                lastPartialText = currentFullTranscript
+            }
 
             when {
                 speechFinal -> {
-                    val text = if (transcript.isNotBlank()) transcript else lastPartialText
+                    val text = if (currentFullTranscript.isNotBlank()) currentFullTranscript else lastPartialText
                     if (text.isNotEmpty() && !finalEmitted) {
                         reconnectAttempts = 0
                         finalEmitted = true
                         _state.value = SttState.FinalResult(text)
                         isRecording  = false
+                        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
                     }
                 }
-                else -> if (transcript.isNotBlank()) _state.value = SttState.PartialResult(transcript)
+                else -> {
+                    if (currentFullTranscript.isNotBlank()) {
+                        _state.value = SttState.PartialResult(currentFullTranscript)
+                    }
+                }
             }
         } catch (_: Exception) { /* ignore malformed frames */ }
+    }
+
+    internal fun setSessionIdForTesting(id: Long) {
+        sessionId = id
+    }
+
+    internal fun resetForTesting() {
+        finalEmitted = false
+        lastPartialText = ""
+        synchronized(accumulatedFinalText) { accumulatedFinalText.clear() }
+        _state.value = SttState.Idle
     }
 }

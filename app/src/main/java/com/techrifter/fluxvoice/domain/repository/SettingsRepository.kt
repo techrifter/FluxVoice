@@ -23,6 +23,7 @@ interface SettingsRepository {
     suspend fun updateGeminiApiKey(value: String)
     suspend fun updateOpenAiApiKey(value: String)
     suspend fun updateGroqApiKey(value: String)
+    suspend fun updateOpenRouterApiKey(value: String)
     suspend fun updateLocalLlmUrl(value: String)
     suspend fun updateModelId(value: String)
     suspend fun updateTemperature(value: Float)
@@ -30,6 +31,7 @@ interface SettingsRepository {
 
     // ── ElevenLabs ────────────────────────────────────────────────────────────
     suspend fun updateElevenLabsAgentId(value: String)
+    suspend fun updateElevenLabsApiKey(value: String)
 
     // ── Deepgram ──────────────────────────────────────────────────────────────
     suspend fun updateDeepgramApiKey(value: String)
@@ -39,6 +41,7 @@ interface SettingsRepository {
 
     // ── Text-to-Speech ────────────────────────────────────────────────────────
     suspend fun updateTtsEnabled(value: Boolean)
+    suspend fun updateTtsProvider(value: String)
     suspend fun updateTtsSpeechRate(value: Float)
     suspend fun updateTtsPitch(value: Float)
 
@@ -53,4 +56,8 @@ interface SettingsRepository {
 
     // ── App preferences ───────────────────────────────────────────────────────
     suspend fun updateSplashEnabled(value: Boolean)
+
+    // ── Anonymous Identity & Telemetry ────────────────────────────────────────
+    suspend fun updateAnonymousIdentity(username: String)
+    suspend fun updateTelemetryOptIn(value: Boolean)
 }

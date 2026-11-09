@@ -7,7 +7,9 @@ package com.techrifter.fluxvoice.domain.model
  * - [DEEPGRAM]  — Deepgram Streaming: streams raw PCM over WebSocket with live interim results
  */
 enum class SttProvider(val displayName: String) {
-    WHISPER("Whisper (OpenAI — batch)"),
-    DEEPGRAM("Deepgram (real-time streaming)")
+    DEEPGRAM("Deepgram Nova-3 (Real-Time WebSocket)"),
+    GROQ_WHISPER("Groq Whisper Turbo (Fast Cloud REST)"),
+    WHISPER("OpenAI Whisper (Cloud REST)"),
+    CUSTOM("Custom BYOK Endpoint")
 }
 

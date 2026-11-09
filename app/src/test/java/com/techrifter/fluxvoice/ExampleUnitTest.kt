@@ -12,6 +12,6 @@ import org.junit.Assert.*
 class ExampleUnitTest {
     @Test
     fun test() {
-        Log.d("TAG", "Voice AI Works!")
+        assertTrue(true)
     }
 }

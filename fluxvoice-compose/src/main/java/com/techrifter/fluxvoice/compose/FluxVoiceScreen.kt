@@ -86,7 +86,7 @@ private val modeGradients = mapOf(
  * val controller = rememberFluxVoice(mode) {
  *     systemPrompt = mode.defaultPrompt
  *     sttProvider  = DeepgramSttProvider(apiKey = "…")
- *     llmProvider  = GroqLlmProvider(apiKey = "…")
+ *     llmProvider  = OpenAiCompatibleLlmProvider(apiKey = "…")
  *     ttsProvider  = CartesiaTtsProvider(apiKey = "…")
  * }
  * FluxVoiceScreen(

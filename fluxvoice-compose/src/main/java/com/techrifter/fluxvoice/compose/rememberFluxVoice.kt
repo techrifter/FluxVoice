@@ -19,7 +19,7 @@ import com.techrifter.fluxvoice.core.FluxVoiceController
  * fun MyScreen() {
  *     val controller = rememberFluxVoice(mode) {
  *         sttProvider = DeepgramSttProvider(apiKey = BuildConfig.DEEPGRAM_KEY)
- *         llmProvider = GroqLlmProvider(apiKey = BuildConfig.GROQ_KEY)
+ *         llmProvider = OpenAiCompatibleLlmProvider(apiKey = BuildConfig.GROQ_KEY)
  *         ttsProvider = CartesiaTtsProvider(apiKey = BuildConfig.CARTESIA_KEY, voiceId = "...")
  *         systemPrompt = "You are a friendly barista assistant."
  *         vadEnabled   = true

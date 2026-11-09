@@ -32,12 +32,13 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "CartesiaTtsProvider"
 private const val CARTESIA_TTS_URL = "https://api.cartesia.ai/tts/bytes"
-private const val CARTESIA_API_VERSION = "2026-03-01"
-private const val DEFAULT_MODEL_ID = "sonic-3"
+private const val CARTESIA_API_VERSION = "2024-06-10"
+private const val DEFAULT_MODEL_ID = "sonic-3.6"
 private const val SAMPLE_RATE = 44100
 
 /** Cartesia's voice — natural, conversational. */
@@ -63,12 +64,14 @@ private data class SpeakItem(val text: String, val utteranceId: String)
  *
  * @param apiKey   Cartesia API key. Get one at play.cartesia.ai.
  * @param voiceId  Cartesia voice ID. Defaults to [CARTESIA_VOICE].
- * @param modelId  Cartesia model. Defaults to `sonic-3` (best quality + speed balance).
+ * @param modelId  Cartesia model. Defaults to `sonic-3.6` (best quality + speed balance).
  */
 public class CartesiaTtsProvider(
     private val apiKey: String,
     private val voiceId: String = CARTESIA_VOICE,
-    private val modelId: String = DEFAULT_MODEL_ID
+    private val modelId: String = DEFAULT_MODEL_ID,
+    speechRate: Float = 1.0f,
+    pitch: Float = 1.0f
 ) : TtsProvider {
 
     private val _state = MutableStateFlow<TtsState>(TtsState.Idle)
@@ -79,11 +82,19 @@ public class CartesiaTtsProvider(
     private val pendingCount = AtomicInteger(0)
 
     @Volatile private var activeTrack: AudioTrack? = null
+    @Volatile private var speechRate: Float = speechRate.coerceIn(0.5f, 2.0f)
+    @Volatile private var pitch: Float = pitch.coerceIn(0.5f, 2.0f)
     private var workerJob: Job? = null
     private var idleDebounceJob: Job? = null
 
     private val json = Json { ignoreUnknownKeys = true }
     private val httpClient = HttpClient(OkHttp) {
+        engine {
+            config {
+                connectTimeout(30, TimeUnit.SECONDS)
+                readTimeout(60, TimeUnit.SECONDS)
+            }
+        }
         install(ContentNegotiation) { json(json) }
     }
 
@@ -123,6 +134,34 @@ public class CartesiaTtsProvider(
         activeTrack = null
     }
 
+    override fun setSpeechRate(rate: Float) {
+        val clamped = rate.coerceIn(0.5f, 2.0f)
+        speechRate = clamped
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            runCatching {
+                activeTrack?.let { track ->
+                    val params = track.playbackParams
+                    params.speed = clamped
+                    track.playbackParams = params
+                }
+            }
+        }
+    }
+
+    override fun setPitch(pitch: Float) {
+        val clamped = pitch.coerceIn(0.5f, 2.0f)
+        this.pitch = clamped
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            runCatching {
+                activeTrack?.let { track ->
+                    val params = track.playbackParams
+                    params.pitch = clamped
+                    track.playbackParams = params
+                }
+            }
+        }
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private fun startWorker() {
@@ -156,14 +195,14 @@ public class CartesiaTtsProvider(
 
     private suspend fun fetchAudio(text: String): ByteArray? {
         val body = CartesiaRequest(
-            modelId    = modelId,
+            modelId    = modelId.trim(),
             transcript = text,
-            voice      = CartesiaVoice("id", voiceId),
+            voice      = CartesiaVoice("id", voiceId.trim()),
             outputFormat = CartesiaOutputFormat("wav", "pcm_s16le", SAMPLE_RATE)
         )
         val response = httpClient.post(CARTESIA_TTS_URL) {
             contentType(ContentType.Application.Json)
-            header("X-API-Key", apiKey)
+            header("X-API-Key", apiKey.trim())
             header("Cartesia-Version", CARTESIA_API_VERSION)
             setBody(json.encodeToString(CartesiaRequest.serializer(), body))
         }
@@ -208,10 +247,27 @@ public class CartesiaTtsProvider(
             .setBufferSizeInBytes(pcm.size.coerceAtLeast(minBuf))
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
+
+        if (track.state != AudioTrack.STATE_INITIALIZED) {
+            Log.e(TAG, "AudioTrack failed to initialize")
+            track.release()
+            return
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            runCatching {
+                val params = android.media.PlaybackParams()
+                params.speed = speechRate
+                params.pitch = pitch
+                track.playbackParams = params
+            }
+        }
+
         activeTrack = track
         track.write(pcm, 0, pcm.size)
         track.play()
-        val durationMs = pcm.size.toLong() * 1000L / (SAMPLE_RATE.toLong() * channels * 2)
+        val effectiveRate = speechRate.coerceAtLeast(0.1f)
+        val durationMs = (pcm.size.toLong() * 1000L / (SAMPLE_RATE.toLong() * channels * 2 * effectiveRate)).toLong()
         try {
             delay(durationMs + 300L)
         } finally {
@@ -221,8 +277,8 @@ public class CartesiaTtsProvider(
         }
     }
 
-    private fun findDataOffset(wav: ByteArray): Int {
-        for (i in 12 until wav.size - 8) {
+    internal fun findDataOffset(wav: ByteArray): Int {
+        for (i in 12 .. wav.size - 8) {
             if (wav[i] == 'd'.code.toByte() && wav[i + 1] == 'a'.code.toByte() &&
                 wav[i + 2] == 't'.code.toByte() && wav[i + 3] == 'a'.code.toByte()
             ) return i + 8
@@ -230,10 +286,13 @@ public class CartesiaTtsProvider(
         return -1
     }
 
-    private fun readShortLE(buf: ByteArray, offset: Int): Int {
+    internal fun readShortLE(buf: ByteArray, offset: Int): Int {
         if (offset + 1 >= buf.size) return 1
         return (buf[offset].toInt() and 0xFF) or ((buf[offset + 1].toInt() and 0xFF) shl 8)
     }
+
+    internal fun getSpeechRateForTesting(): Float = speechRate
+    internal fun getPitchForTesting(): Float = pitch
 }
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────

@@ -45,6 +45,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation("androidx.compose.material:material-icons-core")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 val javadocStubJar = tasks.register<Jar>("javadocJar") {

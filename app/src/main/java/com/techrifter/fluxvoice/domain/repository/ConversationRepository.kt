@@ -3,6 +3,7 @@ package com.techrifter.fluxvoice.domain.repository
 import com.techrifter.fluxvoice.domain.model.Message
 import com.techrifter.fluxvoice.domain.streaming.StreamEvent
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Single source of truth for an ongoing voice conversation.
@@ -22,6 +23,9 @@ interface ConversationRepository {
     /** Current conversation history (user + assistant turns), newest last. */
     val history: List<Message>
 
+    /** Observable flow of conversation history (user + assistant turns). */
+    val historyFlow: StateFlow<List<Message>>
+
     /**
      * Stream an AI response for [userInput].
      *
@@ -33,6 +37,9 @@ interface ConversationRepository {
      *                 Start → Token* → Error (network/API failure)
      */
     fun streamResponse(userInput: String, systemPromptOverride: String? = null): Flow<StreamEvent>
+
+    /** Append a single message directly to history (e.g. from ElevenLabs or external turns). */
+    fun addMessage(message: Message)
 
     /** Wipe conversation history to start a fresh session. */
     fun clearHistory()

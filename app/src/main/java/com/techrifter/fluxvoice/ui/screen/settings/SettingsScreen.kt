@@ -7,9 +7,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,29 +23,54 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -54,12 +81,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -69,19 +98,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterModel
 import com.techrifter.fluxvoice.domain.model.AppMode
 import com.techrifter.fluxvoice.domain.model.AppSettings
 import com.techrifter.fluxvoice.domain.model.ProviderType
 import com.techrifter.fluxvoice.domain.model.SttProvider
+import com.techrifter.fluxvoice.domain.model.TtsProvider
 import com.techrifter.fluxvoice.domain.model.VoiceMode
+import com.techrifter.fluxvoice.ui.theme.FluxAzure
+import com.techrifter.fluxvoice.ui.theme.FluxCyan
+import com.techrifter.fluxvoice.ui.theme.FluxEmerald
+import com.techrifter.fluxvoice.ui.theme.FluxSunsetOrange
+import com.techrifter.fluxvoice.ui.theme.HairlineBorder
+import com.techrifter.fluxvoice.ui.theme.HairlineHighlight
+import com.techrifter.fluxvoice.ui.theme.ObsidianCard
+import com.techrifter.fluxvoice.ui.theme.ObsidianFloat
+import com.techrifter.fluxvoice.ui.theme.ObsidianSurface
+import com.techrifter.fluxvoice.ui.theme.ObsidianVoid
+import com.techrifter.fluxvoice.ui.theme.TextPureWhite
+import com.techrifter.fluxvoice.ui.theme.TextSlateMedium
+import com.techrifter.fluxvoice.ui.theme.TextSlateMuted
 import kotlin.math.roundToInt
-
-// ── Gradient palettes per mode ────────────────────────────────────────────────
-private val modeGradients = mapOf(
-    AppMode.FAST     to listOf(Color(0xFF06B6D4), Color(0xFF2563EB)),
-    AppMode.THINKING to listOf(Color(0xFF8B5CF6), Color(0xFFDB2777)),
-    AppMode.CUSTOM   to listOf(Color(0xFF059669), Color(0xFF0EA5E9))
-)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root screen
@@ -91,22 +128,88 @@ private val modeGradients = mapOf(
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onKeyVaultClick: () -> Unit = {},
+    onBenchmarksClick: () -> Unit = {},
+    onCatalogClick: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val settings = uiState.settings
+    val currentModels by viewModel.currentProviderModels.collectAsStateWithLifecycle()
+    var showIdentityDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.savedMessage) {
+        uiState.savedMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissSavedMessage()
+        }
+    }
 
     Scaffold(
+        containerColor = ObsidianVoid,
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+        },
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = {
+                    Text(
+                        "SETTINGS",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        color = TextPureWhite
+                    )
+                },
+                actions = {
+                    if (settings.anonymousUsername.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ObsidianCard,
+                            border = BorderStroke(1.dp, HairlineHighlight),
+                            modifier = Modifier
+                                .padding(end = 16.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { showIdentityDialog = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Person,
+                                    contentDescription = "Edit Username",
+                                    tint = FluxCyan,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = settings.anonymousUsername,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPureWhite
+                                )
+                            }
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPureWhite)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = ObsidianVoid
                 )
             )
         }
@@ -119,6 +222,100 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(8.dp))
+
+            // ── Key Vault Banner (BYOK) ───────────────────────────────────────
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onKeyVaultClick() },
+                shape = RoundedCornerShape(12.dp),
+                color = ObsidianCard,
+                border = BorderStroke(1.dp, HairlineBorder)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.Lock,
+                        contentDescription = null,
+                        tint = TextPureWhite,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Key Vault (BYOK)",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = TextPureWhite
+                        )
+                        Text(
+                            "Hardware Keystore encrypted keys for Groq, OpenRouter, Deepgram, Cartesia",
+                            fontSize = 12.sp,
+                            color = TextSlateMedium
+                        )
+                    }
+                    Icon(
+                        Icons.Rounded.ChevronRight,
+                        contentDescription = "Open",
+                        tint = TextSlateMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ── Model Catalog & Benchmarks Navigation Tiles ──────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onCatalogClick() },
+                    shape = RoundedCornerShape(10.dp),
+                    color = ObsidianCard,
+                    border = BorderStroke(1.dp, HairlineBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Explore, contentDescription = null, tint = TextPureWhite, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Model Catalog", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TextPureWhite)
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onBenchmarksClick() },
+                    shape = RoundedCornerShape(10.dp),
+                    color = ObsidianCard,
+                    border = BorderStroke(1.dp, HairlineBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Speed, contentDescription = null, tint = TextPureWhite, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Benchmarks", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TextPureWhite)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
 
             // ── Mode selector ─────────────────────────────────────────────────
             Column(
@@ -156,14 +353,25 @@ fun SettingsScreen(
                 label = "mode_content"
             ) { mode ->
                 when (mode) {
-                    AppMode.FAST     -> FastModeContent(settings, viewModel)
-                    AppMode.THINKING -> ThinkingModeContent(settings, viewModel)
-                    AppMode.CUSTOM   -> CustomModeContent(settings, viewModel)
+                    AppMode.FAST     -> FastModeContent(settings, viewModel, onBack)
+                    AppMode.THINKING -> ThinkingModeContent(settings, viewModel, onBack)
+                    AppMode.CUSTOM   -> CustomModeContent(settings, viewModel, currentModels, onCatalogClick, onBack)
                 }
             }
 
             Spacer(Modifier.height(28.dp))
         }
+    }
+
+    if (showIdentityDialog) {
+        ChangeIdentityDialog(
+            currentUsername = settings.anonymousUsername,
+            onDismiss = { showIdentityDialog = false },
+            onConfirm = { newUsername ->
+                viewModel.updateUsername(newUsername)
+            },
+            onRollRandom = { viewModel.getRandomUsername() }
+        )
     }
 }
 
@@ -178,46 +386,40 @@ private fun ModeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val gradient = modeGradients[mode]!!
-    val elevation by animateDpAsState(if (isSelected) 8.dp else 0.dp, label = "card_elev")
-    val scale     by animateFloatAsState(if (isSelected) 1.04f else 1f, label = "card_scale")
+    val modeAccent = when (mode) {
+        AppMode.FAST     -> FluxSunsetOrange
+        AppMode.THINKING -> FluxAzure
+        AppMode.CUSTOM   -> FluxEmerald
+    }
 
-    Box(
+    Surface(
         modifier = modifier
-            .scale(scale)
-            .shadow(elevation, RoundedCornerShape(16.dp))
-            .clip(RoundedCornerShape(16.dp))
-            .then(
-                if (isSelected)
-                    Modifier.background(Brush.linearGradient(gradient))
-                else
-                    Modifier
-                        .background(MaterialTheme.colorScheme.surface)
-                        .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 16.dp),
-        contentAlignment = Alignment.Center
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) ObsidianSurface else ObsidianCard,
+        border = BorderStroke(1.dp, if (isSelected) modeAccent.copy(alpha = 0.55f) else HairlineBorder)
     ) {
         Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(mode.emoji, fontSize = 22.sp)
             Text(
-                text = mode.displayName,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                text = mode.displayName.uppercase(),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                fontSize = 11.sp,
+                letterSpacing = 0.6.sp,
+                color = if (isSelected) modeAccent else TextSlateMedium,
                 textAlign = TextAlign.Center
             )
             Text(
                 text = mode.tagline,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (isSelected) Color.White.copy(alpha = 0.85f)
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                color = TextSlateMuted,
                 textAlign = TextAlign.Center,
-                lineHeight = 13.sp
+                lineHeight = 14.sp
             )
         }
     }
@@ -228,7 +430,11 @@ private fun ModeCard(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun FastModeContent(settings: AppSettings, viewModel: SettingsViewModel) {
+private fun FastModeContent(
+    settings: AppSettings,
+    viewModel: SettingsViewModel,
+    onBack: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -236,18 +442,17 @@ private fun FastModeContent(settings: AppSettings, viewModel: SettingsViewModel)
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Text(
-            "Zero setup. Plug in your keys and start talking — Groq's ultra-fast inference + Deepgram deliver the lowest latency possible.",
+            "Zero setup. Plug in your keys and start talking: Groq's ultra-fast inference + Deepgram deliver the lowest latency possible.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         PresetInfoCard(
-            gradientColors = modeGradients[AppMode.FAST]!!,
             items = listOf(
-                PresetItem("⚡", "Groq · Llama 3.3 70B", "AI Model"),
-                PresetItem("🎙", "Deepgram Streaming", "Real-time STT"),
-                PresetItem("↩️", "6-turn memory", "Context"),
-                PresetItem("🎯", "VAD + Backchannel", "Smart UX"),
+                PresetItem("Groq · GPT OSS 120B", "AI Model"),
+                PresetItem("Deepgram Streaming", "Real-time STT"),
+                PresetItem("6-turn memory", "Context"),
+                PresetItem("Hardware AEC Barge-in", "Smart UX")
             )
         )
 
@@ -278,6 +483,23 @@ private fun FastModeContent(settings: AppSettings, viewModel: SettingsViewModel)
         )
 
         CartesiaVoiceSection(settings, viewModel)
+
+        Spacer(Modifier.height(4.dp))
+        Button(
+            onClick = { viewModel.applyFastPresetAndActivate(onSuccess = onBack) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = FluxSunsetOrange,
+                contentColor = Color.Black
+            )
+        ) {
+            Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Save & Run Fast Mode", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+        }
     }
 }
 
@@ -286,7 +508,11 @@ private fun FastModeContent(settings: AppSettings, viewModel: SettingsViewModel)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ThinkingModeContent(settings: AppSettings, viewModel: SettingsViewModel) {
+private fun ThinkingModeContent(
+    settings: AppSettings,
+    viewModel: SettingsViewModel,
+    onBack: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -294,18 +520,17 @@ private fun ThinkingModeContent(settings: AppSettings, viewModel: SettingsViewMo
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Text(
-            "Built for depth. Gemini 2.5 Pro's reasoning capabilities deliver thoughtful, nuanced responses with full conversational context.",
+            "Built for depth. Gemini 2.5 Flash delivers thoughtful, nuanced responses with high speed and generous 1M token free-tier quota.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         PresetInfoCard(
-            gradientColors = modeGradients[AppMode.THINKING]!!,
             items = listOf(
-                PresetItem("🧠", "Google Gemini 2.5 Pro", "AI Model"),
-                PresetItem("🎙", "Deepgram Streaming", "Real-time STT"),
-                PresetItem("↩️", "20-turn memory", "Context"),
-                PresetItem("🎯", "Temperature 0.3", "Precision"),
+                PresetItem("Google Gemini 2.5 Flash", "AI Model"),
+                PresetItem("Deepgram Streaming", "Real-time STT"),
+                PresetItem("20-turn memory", "Context"),
+                PresetItem("Temperature 0.3", "Precision")
             )
         )
 
@@ -336,6 +561,23 @@ private fun ThinkingModeContent(settings: AppSettings, viewModel: SettingsViewMo
         )
 
         CartesiaVoiceSection(settings, viewModel)
+
+        Spacer(Modifier.height(4.dp))
+        Button(
+            onClick = { viewModel.applyThinkingPresetAndActivate(onSuccess = onBack) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = FluxAzure,
+                contentColor = Color.Black
+            )
+        ) {
+            Icon(Icons.Rounded.Psychology, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Save & Run Thinking Mode", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+        }
     }
 }
 
@@ -344,7 +586,40 @@ private fun ThinkingModeContent(settings: AppSettings, viewModel: SettingsViewMo
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewModel) {
+private fun customFilterChipColors() = FilterChipDefaults.filterChipColors(
+    selectedContainerColor = FluxEmerald.copy(alpha = 0.16f),
+    selectedLabelColor = FluxEmerald,
+    containerColor = ObsidianCard,
+    labelColor = TextSlateMedium
+)
+
+private fun customFilterChipBorder(selected: Boolean) = BorderStroke(
+    1.dp,
+    if (selected) FluxEmerald.copy(alpha = 0.70f) else HairlineBorder
+)
+
+@Composable
+private fun customSliderColors() = SliderDefaults.colors(
+    thumbColor = FluxEmerald,
+    activeTrackColor = FluxEmerald,
+    inactiveTrackColor = ObsidianFloat
+)
+
+@Composable
+private fun customSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = FluxEmerald,
+    checkedTrackColor = FluxEmerald.copy(alpha = 0.35f),
+    checkedBorderColor = FluxEmerald
+)
+
+@Composable
+private fun CustomModeContent(
+    settings: AppSettings,
+    viewModel: SettingsViewModel,
+    currentModels: List<OpenRouterModel>,
+    onCatalogClick: () -> Unit,
+    onBack: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -364,13 +639,71 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                 onModeSelected = { viewModel.updateVoiceMode(it.name) }
             )
             if (settings.voiceMode == VoiceMode.ELEVENLABS) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = ObsidianCard,
+                    border = BorderStroke(1.dp, HairlineBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Psychology,
+                                contentDescription = null,
+                                tint = FluxCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                "All-in-One Voice Agent",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPureWhite
+                            )
+                        }
+                        Text(
+                            "ElevenLabs handles STT, LLM, and TTS end-to-end. Individual provider settings are bypassed.",
+                            fontSize = 12.sp,
+                            color = TextSlateMedium,
+                            lineHeight = 17.sp
+                        )
+                    }
+                }
+
+                val uriHandler = LocalUriHandler.current
                 ApiKeyField(
                     label = "ElevenLabs Agent ID",
                     value = settings.elevenLabsAgentId,
                     onValueChange = viewModel::updateElevenLabsAgentId,
                     placeholder = "your_agent_id_here",
                     isSet = settings.elevenLabsAgentId.isNotBlank(),
-                    isPassword = false
+                    isPassword = false,
+                    helperText = "Get or create your Agent at: "
+                )
+                Text(
+                    text = "https://elevenlabs.io/app/conversational-ai ↗",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FluxCyan,
+                    modifier = Modifier
+                        .clickable {
+                            uriHandler.openUri("https://elevenlabs.io/app/conversational-ai")
+                        }
+                        .padding(start = 4.dp, top = 2.dp)
+                )
+
+                val elevenLabsKey = settings.elevenLabsApiKey.ifBlank { viewModel.getElevenLabsApiKey() }
+                ApiKeyField(
+                    label = "ElevenLabs API Key (Optional)",
+                    value = elevenLabsKey,
+                    onValueChange = viewModel::updateElevenLabsApiKey,
+                    placeholder = "sk_… (only required if Agent is Private)",
+                    isSet = elevenLabsKey.isNotBlank(),
+                    helperText = "Only needed if your ElevenLabs Agent security is set to Private"
                 )
             }
             if (settings.voiceMode == VoiceMode.STANDARD) {
@@ -378,26 +711,54 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                     selectedProvider = settings.sttProvider,
                     onProviderSelected = { viewModel.updateSttProvider(it.name) }
                 )
-                if (settings.sttProvider == SttProvider.DEEPGRAM) {
-                    ApiKeyField(
-                        label = "Deepgram API Key",
-                        value = settings.deepgramApiKey,
-                        onValueChange = viewModel::updateDeepgramApiKey,
-                        placeholder = "Token …",
-                        isSet = settings.deepgramApiKey.isNotBlank()
-                    )
-                } else {
-                    Text(
-                        "Whisper uses the OpenAI API key from the Credentials section.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                when (settings.sttProvider) {
+                    SttProvider.DEEPGRAM -> {
+                        ApiKeyField(
+                            label = "Deepgram API Key",
+                            value = settings.deepgramApiKey,
+                            onValueChange = viewModel::updateDeepgramApiKey,
+                            placeholder = "Token …",
+                            isSet = settings.deepgramApiKey.isNotBlank(),
+                            helperText = "Powers Nova-3 streaming WebSocket (<150ms). Get at console.deepgram.com"
+                        )
+                    }
+                    SttProvider.GROQ_WHISPER -> {
+                        ApiKeyField(
+                            label = "Groq API Key (Whisper Turbo)",
+                            value = settings.groqApiKey,
+                            onValueChange = viewModel::updateGroqApiKey,
+                            placeholder = "gsk_…",
+                            isSet = settings.groqApiKey.isNotBlank(),
+                            helperText = "Powers Whisper Large v3 Turbo on Groq LPUs (<300ms). Get at console.groq.com. Completely separate from OpenAI."
+                        )
+                    }
+                    SttProvider.WHISPER -> {
+                        ApiKeyField(
+                            label = "OpenAI API Key (Whisper-1)",
+                            value = settings.openAiApiKey,
+                            onValueChange = viewModel::updateOpenAiApiKey,
+                            placeholder = "sk-…",
+                            isSet = settings.openAiApiKey.isNotBlank(),
+                            helperText = "Powers official OpenAI Whisper-1 cloud transcription. Get at platform.openai.com."
+                        )
+                    }
+                    SttProvider.CUSTOM -> {
+                        ApiKeyField(
+                            label = "Custom STT Endpoint URL",
+                            value = settings.localLlmUrl,
+                            onValueChange = viewModel::updateLocalLlmUrl,
+                            placeholder = "https://api.together.xyz/v1/audio/transcriptions",
+                            isSet = settings.localLlmUrl.isNotBlank(),
+                            helperText = "OpenAI-compatible transcription endpoint. Configure full parameters in Pipeline Studio."
+                        )
+                    }
                 }
             }
         }
 
-        // ── AI Provider ───────────────────────────────────────────────────────
-        SettingsSection("AI Provider") {
+        if (settings.voiceMode == VoiceMode.STANDARD) {
+            // ── AI Provider ───────────────────────────────────────────────────────
+            SettingsSection("AI Provider") {
             ProviderDropdown(
                 selectedProvider = settings.providerType,
                 onProviderSelected = { viewModel.updateProvider(it.name) }
@@ -442,17 +803,120 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                     onValueChange = viewModel::updateLocalLlmUrl,
                     placeholder = "http://localhost:11434"
                 )
+                ProviderType.OPENROUTER -> {
+                    ApiKeyField(
+                        label = "OpenRouter API Key",
+                        value = settings.openRouterApiKey.ifBlank { viewModel.getOpenRouterApiKey() },
+                        onValueChange = viewModel::updateOpenRouterApiKey,
+                        placeholder = "sk-or-v1-…",
+                        isSet = settings.openRouterApiKey.isNotBlank() || viewModel.getOpenRouterApiKey().isNotBlank(),
+                        helperText = "Get your universal gateway key at openrouter.ai/keys"
+                    )
+                }
             }
         }
 
         // ── Model ─────────────────────────────────────────────────────────────
         SettingsSection("Model") {
+            val dynamicQuickPicks = remember(currentModels) {
+                val priority = currentModels.filter { it.isPopular || it.isFreeTier }
+                val list = if (priority.isNotEmpty()) priority else currentModels
+                list.take(8).map { model ->
+                    val shortName = when {
+                        model.name.length > 22 -> model.name.take(20) + "…"
+                        else -> model.name
+                    }
+                    Triple(shortName, model.id, model.isFreeTier)
+                }
+            }
+
+            if (dynamicQuickPicks.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Popular Models (${currentModels.size} available)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FluxEmerald
+                    )
+                    IconButton(
+                        onClick = { viewModel.refreshCurrentProviderModels() },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Refresh models",
+                            tint = FluxEmerald,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    for ((name, modelId, isFree) in dynamicQuickPicks) {
+                        val isSelected = settings.modelId.equals(modelId, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { viewModel.updateModelId(modelId) },
+                            colors = customFilterChipColors(),
+                            border = customFilterChipBorder(isSelected),
+                            label = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    if (isFree) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(5.dp)
+                                                .background(FluxEmerald, CircleShape)
+                                        )
+                                    }
+                                    Text(name, fontSize = 11.sp)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
             SettingsTextField(
                 label = "Model ID",
                 value = settings.modelId,
                 onValueChange = viewModel::updateModelId,
                 placeholder = settings.providerType.defaultModel
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (settings.providerType == ProviderType.OPENROUTER) {
+                        "Tap a live model or enter custom slug"
+                    } else {
+                        "Tap a live model or enter custom ID"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Catalog ↗",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = FluxEmerald,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onCatalogClick() }
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
         }
 
         // ── Generation ────────────────────────────────────────────────────────
@@ -465,7 +929,8 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                 value = settings.temperature,
                 onValueChange = { viewModel.updateTemperature((it * 100).roundToInt() / 100f) },
                 valueRange = 0f..1f,
-                steps = 9
+                steps = 9,
+                colors = customSliderColors()
             )
             Text(
                 "Higher = more creative. Keep below 0.5 for factual replies, 0.7 for natural conversation.",
@@ -492,7 +957,8 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                 value = settings.maxContextTurns.toFloat(),
                 onValueChange = { viewModel.updateMaxContextTurns(it.roundToInt()) },
                 valueRange = 1f..20f,
-                steps = 18
+                steps = 18,
+                colors = customSliderColors()
             )
         }
 
@@ -505,27 +971,211 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Enable text-to-speech", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Multi-engine voice playback (Cartesia, ElevenLabs, OpenAI, Deepgram, Android)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Switch(
                     checked = settings.ttsEnabled,
-                    onCheckedChange = viewModel::updateTtsEnabled
+                    onCheckedChange = viewModel::updateTtsEnabled,
+                    colors = customSwitchColors()
                 )
             }
-            ApiKeyField(
-                label = "Cartesia API Key",
-                value = settings.cartesiaApiKey,
-                onValueChange = viewModel::updateCartesiaApiKey,
-                placeholder = "sk-ant-…",
-                isSet = settings.cartesiaApiKey.isNotBlank(),
-                helperText = "Optional · Leave blank to use Android TTS"
-            )
-            SettingsTextField(
-                label = "Cartesia Voice ID",
-                value = settings.cartesiaVoiceId,
-                onValueChange = viewModel::updateCartesiaVoiceId,
-                placeholder = "638efaaa-4d0c-442e-b701-3fae16aad012"
-            )
-            if (settings.cartesiaApiKey.isBlank()) {
+
+            if (settings.ttsEnabled) {
+                TtsProviderDropdown(
+                    selectedProvider = settings.ttsProvider,
+                    onProviderSelected = { viewModel.updateTtsProvider(it.name) }
+                )
+
+                when (settings.ttsProvider) {
+                    TtsProvider.CARTESIA -> {
+                        ApiKeyField(
+                            label = "Cartesia API Key",
+                            value = settings.cartesiaApiKey,
+                            onValueChange = viewModel::updateCartesiaApiKey,
+                            placeholder = "Enter Cartesia API key",
+                            isSet = settings.cartesiaApiKey.isNotBlank(),
+                            helperText = "Get at cartesia.ai"
+                        )
+                        SettingsTextField(
+                            label = "Cartesia Voice ID",
+                            value = settings.cartesiaVoiceId,
+                            onValueChange = viewModel::updateCartesiaVoiceId,
+                            placeholder = "638efaaa-4d0c-442e-b701-3fae16aad012"
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Sameer (Problem Solver)" to "638efaaa-4d0c-442e-b701-3fae16aad012",
+                                "Gareth (Conversational)" to "3a01612e-07da-4a85-bba8-ce10481df477",
+                                "Harlow (Warm Support)" to "6c756032-11c3-4be8-a120-74f9673fb700",
+                                "Maren (Resourceful Guide)" to "b2e12ebd-7bed-4d48-9243-0aa7acef4140"
+                            ).forEach { (label, id) ->
+                                val isSelected = settings.cartesiaVoiceId == id
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.updateCartesiaVoiceId(id) },
+                                    colors = customFilterChipColors(),
+                                    border = customFilterChipBorder(isSelected),
+                                    label = { Text(label, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                    TtsProvider.ELEVENLABS -> {
+                        val elevenLabsKey = settings.elevenLabsApiKey.ifBlank { viewModel.getElevenLabsApiKey() }
+                        ApiKeyField(
+                            label = "ElevenLabs API Key",
+                            value = elevenLabsKey,
+                            onValueChange = viewModel::updateElevenLabsApiKey,
+                            placeholder = "sk_…",
+                            isSet = elevenLabsKey.isNotBlank(),
+                            helperText = "Get at elevenlabs.io"
+                        )
+                        SettingsTextField(
+                            label = "ElevenLabs Voice ID",
+                            value = settings.cartesiaVoiceId,
+                            onValueChange = viewModel::updateCartesiaVoiceId,
+                            placeholder = "JBFqnCBsd6RMkjVDRZzb (George)"
+                        )
+                        val ttsUriHandler = LocalUriHandler.current
+                        Text(
+                            text = "Browse voices at: https://elevenlabs.io/app/voice-library ↗",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = FluxCyan,
+                            modifier = Modifier
+                                .clickable {
+                                    ttsUriHandler.openUri("https://elevenlabs.io/app/voice-library")
+                                }
+                                .padding(start = 4.dp, top = 2.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "George" to "JBFqnCBsd6RMkjVDRZzb",
+                                "Sarah" to "EXAVITQu4vr4xnSDxMaL",
+                                "Charlie" to "IKne3meq5aSn9XLyUdCD",
+                                "Laura" to "FGY2WhTYpPnrIDTdsKH5"
+                            ).forEach { (label, id) ->
+                                val isSelected = settings.cartesiaVoiceId == id
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.updateCartesiaVoiceId(id) },
+                                    colors = customFilterChipColors(),
+                                    border = customFilterChipBorder(isSelected),
+                                    label = { Text(label, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                    TtsProvider.OPENAI -> {
+                        ApiKeyField(
+                            label = "OpenAI API Key (Speech)",
+                            value = settings.openAiApiKey,
+                            onValueChange = viewModel::updateOpenAiApiKey,
+                            placeholder = "sk-…",
+                            isSet = settings.openAiApiKey.isNotBlank(),
+                            helperText = "Reused from Credentials section or update here"
+                        )
+                        SettingsTextField(
+                            label = "OpenAI Voice Model",
+                            value = settings.cartesiaVoiceId,
+                            onValueChange = viewModel::updateCartesiaVoiceId,
+                            placeholder = "alloy"
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("alloy", "echo", "shimmer", "fable", "onyx", "nova").forEach { voice ->
+                                val isSelected = settings.cartesiaVoiceId == voice
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.updateCartesiaVoiceId(voice) },
+                                    colors = customFilterChipColors(),
+                                    border = customFilterChipBorder(isSelected),
+                                    label = { Text(voice, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                    TtsProvider.DEEPGRAM_AURA -> {
+                        ApiKeyField(
+                            label = "Deepgram API Key (Aura)",
+                            value = settings.deepgramApiKey,
+                            onValueChange = viewModel::updateDeepgramApiKey,
+                            placeholder = "Token …",
+                            isSet = settings.deepgramApiKey.isNotBlank(),
+                            helperText = "Reused from STT section or update here"
+                        )
+                        SettingsTextField(
+                            label = "Aura Voice Model",
+                            value = settings.cartesiaVoiceId,
+                            onValueChange = viewModel::updateCartesiaVoiceId,
+                            placeholder = "aura-asteria-en"
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("aura-asteria-en", "aura-luna-en", "aura-stella-en", "aura-helios-en").forEach { model ->
+                                val isSelected = settings.cartesiaVoiceId == model
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.updateCartesiaVoiceId(model) },
+                                    colors = customFilterChipColors(),
+                                    border = customFilterChipBorder(isSelected),
+                                    label = { Text(model, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                    TtsProvider.ANDROID -> {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ObsidianCard,
+                            border = BorderStroke(1.dp, HairlineBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Using 100% on-device offline Android TextToSpeech engine. Zero API keys, zero network latency.",
+                                fontSize = 12.sp,
+                                color = TextSlateMedium,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                    TtsProvider.CUSTOM -> {
+                        SettingsTextField(
+                            label = "Custom Speech Endpoint (/v1/audio/speech)",
+                            value = settings.localLlmUrl,
+                            onValueChange = viewModel::updateLocalLlmUrl,
+                            placeholder = "https://api.your-tts.com/v1"
+                        )
+                        SettingsTextField(
+                            label = "Voice / Speaker ID",
+                            value = settings.cartesiaVoiceId,
+                            onValueChange = viewModel::updateCartesiaVoiceId,
+                            placeholder = "default"
+                        )
+                    }
+                }
+
                 Text(
                     "Speech rate: ${"%.1f".format(settings.ttsSpeechRate)}×",
                     style = MaterialTheme.typography.bodyMedium
@@ -535,7 +1185,8 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                     onValueChange = { viewModel.updateTtsSpeechRate((it * 10).roundToInt() / 10f) },
                     valueRange = 0.5f..2.0f,
                     steps = 14,
-                    enabled = settings.ttsEnabled
+                    enabled = settings.ttsEnabled,
+                    colors = customSliderColors()
                 )
                 Text(
                     "Pitch: ${"%.1f".format(settings.ttsPitch)}×",
@@ -546,9 +1197,11 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                     onValueChange = { viewModel.updateTtsPitch((it * 10).roundToInt() / 10f) },
                     valueRange = 0.5f..2.0f,
                     steps = 14,
-                    enabled = settings.ttsEnabled
+                    enabled = settings.ttsEnabled,
+                    colors = customSliderColors()
                 )
             }
+        }
         }
 
         // ── Conversational UX ─────────────────────────────────────────────────
@@ -568,7 +1221,8 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                 }
                 Switch(
                     checked = settings.vadEnabled,
-                    onCheckedChange = viewModel::updateVadEnabled
+                    onCheckedChange = viewModel::updateVadEnabled,
+                    colors = customSwitchColors()
                 )
             }
             if (settings.vadEnabled) {
@@ -586,7 +1240,8 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                     value = settings.vadSensitivity.toFloat(),
                     onValueChange = { viewModel.updateVadSensitivity(it.roundToInt()) },
                     valueRange = 200f..3000f,
-                    steps = 27
+                    steps = 27,
+                    colors = customSliderColors()
                 )
                 Text(
                     "Lower = more sensitive. Raise if noise triggers early interruption.",
@@ -609,9 +1264,27 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
                 }
                 Switch(
                     checked = settings.backchannelEnabled,
-                    onCheckedChange = viewModel::updateBackchannelEnabled
+                    onCheckedChange = viewModel::updateBackchannelEnabled,
+                    colors = customSwitchColors()
                 )
             }
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Button(
+            onClick = { viewModel.saveCustomPipelineAndActivate(onSuccess = onBack) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = FluxEmerald,
+                contentColor = Color.Black
+            )
+        ) {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp), tint = Color.Black)
+            Spacer(Modifier.width(8.dp))
+            Text("Save & Run Custom Pipeline", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = Color.Black)
         }
     }
 }
@@ -620,71 +1293,51 @@ private fun CustomModeContent(settings: AppSettings, viewModel: SettingsViewMode
 // Shared UI components
 // ─────────────────────────────────────────────────────────────────────────────
 
-private data class PresetItem(val emoji: String, val label: String, val tag: String)
+private data class PresetItem(val label: String, val tag: String)
 
 @Composable
 private fun PresetInfoCard(
-    gradientColors: List<Color>,
     items: List<PresetItem>
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = ObsidianCard,
+        border = BorderStroke(1.dp, HairlineBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Box(
-            modifier = Modifier.background(
-                Brush.linearGradient(
-                    listOf(
-                        gradientColors[0].copy(alpha = 0.10f),
-                        gradientColors[1].copy(alpha = 0.14f)
-                    )
-                )
-            )
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    "Pre-configured for you",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                items.forEachIndexed { index, item ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(item.emoji, fontSize = 16.sp)
-                            Text(
-                                item.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                item.tag,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
+            Text(
+                "PRE-CONFIGURED RUNTIME STACK",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = FluxCyan,
+                letterSpacing = 1.0.sp
+            )
+            items.forEachIndexed { index, item ->
+                if (index > 0) {
+                    HorizontalDivider(color = HairlineBorder)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        item.label,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPureWhite
+                    )
+                    Text(
+                        item.tag,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = TextSlateMuted
+                    )
                 }
             }
         }
@@ -698,7 +1351,7 @@ private fun ReadinessIndicator(isReady: Boolean) {
     val bgColor      = if (isReady) readyGreen.copy(alpha = 0.10f) else pendingColor.copy(alpha = 0.08f)
     val fgColor      = if (isReady) readyGreen else pendingColor
     val icon         = if (isReady) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked
-    val message      = if (isReady) "Ready — tap the mic and start talking!" else "Add your API keys above to get started"
+    val message      = if (isReady) "Ready: tap the mic and start talking!" else "Add your API keys above to get started"
 
     Row(
         modifier = Modifier
@@ -722,7 +1375,6 @@ private fun CartesiaVoiceSection(settings: AppSettings, viewModel: SettingsViewM
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("🎧", fontSize = 16.sp)
             Text(
                 "Voice (Cartesia TTS)",
                 style = MaterialTheme.typography.titleSmall,
@@ -743,7 +1395,7 @@ private fun CartesiaVoiceSection(settings: AppSettings, viewModel: SettingsViewM
             label = "Cartesia API Key",
             value = settings.cartesiaApiKey,
             onValueChange = viewModel::updateCartesiaApiKey,
-            placeholder = "sk-ant-…",
+            placeholder = "Enter Cartesia API key",
             isSet = settings.cartesiaApiKey.isNotBlank(),
             helperText = "Get at cartesia.ai"
         )
@@ -811,10 +1463,12 @@ private fun ApiKeyField(
 @Composable
 private fun SectionLabel(text: String) {
     Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.Medium
+        text.uppercase(),
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        letterSpacing = 0.8.sp,
+        color = FluxCyan,
+        fontWeight = FontWeight.SemiBold
     )
 }
 
@@ -830,14 +1484,16 @@ private fun SettingsSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
+                title.uppercase(),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                letterSpacing = 1.0.sp,
+                color = FluxCyan,
                 fontWeight = FontWeight.SemiBold
             )
             HorizontalDivider(
                 modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                color = HairlineBorder
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -928,7 +1584,7 @@ private fun SttProviderDropdown(
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            SttProvider.entries.forEach { provider ->
+            SttProvider.entries.sortedBy { it.displayName }.forEach { provider ->
                 DropdownMenuItem(
                     text = { Text(provider.displayName) },
                     onClick = { onProviderSelected(provider); expanded = false }
@@ -955,7 +1611,7 @@ private fun ProviderDropdown(
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            ProviderType.entries.forEach { provider ->
+            ProviderType.entries.sortedBy { it.displayName }.forEach { provider ->
                 DropdownMenuItem(
                     text = { Text(provider.displayName) },
                     onClick = { onProviderSelected(provider); expanded = false }
@@ -963,4 +1619,151 @@ private fun ProviderDropdown(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtsProviderDropdown(
+    selectedProvider: TtsProvider,
+    onProviderSelected: (TtsProvider) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = selectedProvider.displayName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("TTS Engine") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            TtsProvider.entries.sortedBy { it.displayName }.forEach { provider ->
+                DropdownMenuItem(
+                    text = { Text(provider.displayName) },
+                    onClick = { onProviderSelected(provider); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChangeIdentityDialog(
+    currentUsername: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+    onRollRandom: () -> String
+) {
+    var usernameInput by remember { mutableStateOf(currentUsername) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ObsidianCard,
+        titleContentColor = TextPureWhite,
+        textContentColor = TextSlateMedium,
+        shape = RoundedCornerShape(16.dp),
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(ObsidianVoid),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.Person,
+                        contentDescription = null,
+                        tint = FluxCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    "Change Identity",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = TextPureWhite
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Update your playground username. Your API keys, custom pipelines, and benchmark history will remain completely intact.",
+                    fontSize = 13.sp,
+                    color = TextSlateMedium,
+                    lineHeight = 18.sp
+                )
+
+                OutlinedTextField(
+                    value = usernameInput,
+                    onValueChange = {
+                        usernameInput = it
+                        if (error != null) error = null
+                    },
+                    label = { Text("Username") },
+                    singleLine = true,
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                val random = onRollRandom()
+                                usernameInput = random
+                                error = null
+                            }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Casino,
+                                contentDescription = "Roll Random Username",
+                                tint = FluxCyan
+                            )
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPureWhite,
+                        unfocusedTextColor = TextPureWhite,
+                        focusedBorderColor = FluxCyan,
+                        unfocusedBorderColor = HairlineBorder,
+                        focusedLabelColor = FluxCyan,
+                        unfocusedLabelColor = TextSlateMuted,
+                        cursorColor = FluxCyan
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val trimmed = usernameInput.trim()
+                    if (trimmed.length < 3) {
+                        error = "Username must be at least 3 characters"
+                        return@Button
+                    }
+                    onConfirm(trimmed)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FluxCyan,
+                    contentColor = ObsidianVoid
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Save Identity", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSlateMedium)
+            }
+        }
+    )
 }

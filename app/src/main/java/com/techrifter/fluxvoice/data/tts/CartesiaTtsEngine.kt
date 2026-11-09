@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.util.Log
+import com.techrifter.fluxvoice.data.security.KeyVault
 import com.techrifter.fluxvoice.domain.repository.SettingsRepository
 import com.techrifter.fluxvoice.domain.tts.TtsEngine
 import com.techrifter.fluxvoice.domain.tts.TtsState
@@ -35,8 +36,8 @@ import javax.inject.Singleton
 
 private const val TAG = "CartesiaTTS"
 private const val CARTESIA_TTS_URL = "https://api.cartesia.ai/tts/bytes"
-private const val CARTESIA_API_VERSION = "2026-03-01"
-private const val DEFAULT_MODEL_ID = "sonic-3"
+private const val CARTESIA_API_VERSION = "2024-06-10"
+private const val DEFAULT_MODEL_ID = "sonic-3.6"
 const val DEFAULT_CARTESIA_VOICE_ID = "638efaaa-4d0c-442e-b701-3fae16aad012"
 private const val SAMPLE_RATE = 44100
 
@@ -88,6 +89,7 @@ class CartesiaTtsEngine @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json,
     private val settingsRepository: SettingsRepository,
+    private val keyVault: KeyVault,
     /** Fallback used when cartesiaApiKey is blank. */
     private val androidFallback: AndroidTtsEngine
 ) : TtsEngine {
@@ -140,7 +142,7 @@ class CartesiaTtsEngine @Inject constructor(
         // Keep cachedApiKey/cachedVoiceId in sync so speak() never suspends to fetch settings.
         engineScope.launch {
             settingsRepository.getSettings().collect { s ->
-                cachedApiKey  = s.cartesiaApiKey
+                cachedApiKey  = s.cartesiaApiKey.ifBlank { keyVault.getCartesiaKey() }
                 cachedVoiceId = s.cartesiaVoiceId.ifBlank { DEFAULT_CARTESIA_VOICE_ID }
             }
         }
@@ -340,7 +342,7 @@ class CartesiaTtsEngine @Inject constructor(
 
     /** Searches for the "data" RIFF chunk and returns the byte offset of the PCM payload. */
     private fun findDataChunkOffset(wav: ByteArray): Int {
-        for (i in 12 until wav.size - 8) {
+        for (i in 12 .. wav.size - 8) {
             if (wav[i] == 'd'.code.toByte() &&
                 wav[i + 1] == 'a'.code.toByte() &&
                 wav[i + 2] == 't'.code.toByte() &&

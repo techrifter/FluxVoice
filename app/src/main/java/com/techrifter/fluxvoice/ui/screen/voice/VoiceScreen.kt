@@ -1,34 +1,26 @@
 package com.techrifter.fluxvoice.ui.screen.voice
 
-import androidx.compose.foundation.shape.CircleShape
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,20 +33,31 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,49 +70,72 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.techrifter.fluxvoice.domain.model.AppMode
-import com.techrifter.fluxvoice.domain.model.VoiceMode
+import com.techrifter.fluxvoice.domain.model.MessageRole
+import com.techrifter.fluxvoice.domain.model.VoiceScenario
+import com.techrifter.fluxvoice.domain.pipeline.PipelineReadiness
+import com.techrifter.fluxvoice.ui.screen.voice.components.BenchmarkHud
+import com.techrifter.fluxvoice.ui.screen.voice.components.LivingVoiceOrb
+import com.techrifter.fluxvoice.ui.screen.voice.components.PipelineSelectorSheet
+import com.techrifter.fluxvoice.ui.screen.voice.components.QuickGuideSheet
+import com.techrifter.fluxvoice.ui.theme.FluxAmber
+import com.techrifter.fluxvoice.ui.theme.FluxAzure
+import com.techrifter.fluxvoice.ui.theme.FluxCyan
+import com.techrifter.fluxvoice.ui.theme.FluxEmerald
+import com.techrifter.fluxvoice.ui.theme.FluxFullSpectrum
+import com.techrifter.fluxvoice.ui.theme.FluxGradient
+import com.techrifter.fluxvoice.ui.theme.FluxRose
+import com.techrifter.fluxvoice.ui.theme.FluxSunsetOrange
+import com.techrifter.fluxvoice.ui.theme.FluxViolet
+import com.techrifter.fluxvoice.ui.theme.HairlineBorder
+import com.techrifter.fluxvoice.ui.theme.HairlineFlame
+import com.techrifter.fluxvoice.ui.theme.HairlineHighlight
+import com.techrifter.fluxvoice.ui.theme.ObsidianCard
+import com.techrifter.fluxvoice.ui.theme.ObsidianFloat
+import com.techrifter.fluxvoice.ui.theme.ObsidianSurface
+import com.techrifter.fluxvoice.ui.theme.ObsidianVoid
+import com.techrifter.fluxvoice.ui.theme.TextPureWhite
+import com.techrifter.fluxvoice.ui.theme.TextSlateDark
+import com.techrifter.fluxvoice.ui.theme.TextSlateMedium
+import com.techrifter.fluxvoice.ui.theme.TextSlateMuted
 
-private val modeGradients = mapOf(
-    AppMode.FAST     to listOf(Color(0xFF06B6D4), Color(0xFF2563EB)),
-    AppMode.THINKING to listOf(Color(0xFF8B5CF6), Color(0xFFDB2777)),
-    AppMode.CUSTOM   to listOf(Color(0xFF059669), Color(0xFF0EA5E9))
-)
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceScreen(
     onSettingsClick: () -> Unit,
+    onStudioClick: (pipelineId: String?, isNew: Boolean) -> Unit = { _, _ -> },
+    onKeyVaultClick: () -> Unit = {},
+    onBenchmarksClick: () -> Unit = {},
+    onCatalogClick: () -> Unit = {},
     viewModel: VoiceViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val allPipelines by viewModel.allPipelines.collectAsStateWithLifecycle()
+    var showPipelineSheet by remember { mutableStateOf(false) }
+    var showGuideSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("flux_voice_ui_prefs", Context.MODE_PRIVATE) }
+    var isQuickStartDismissed by remember {
+        mutableStateOf(prefs.getBoolean("quick_start_dismissed", false))
+    }
 
     LaunchedEffect(context) {
         (context as? Activity)?.let(viewModel::attachActivity)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshReadiness()
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -118,60 +144,16 @@ fun VoiceScreen(
         if (granted) viewModel.onPermissionGranted() else viewModel.onPermissionDenied()
     }
 
-    val primaryColor   = MaterialTheme.colorScheme.primary
-    val secondaryColor = MaterialTheme.colorScheme.secondary
-    val tertiaryColor  = MaterialTheme.colorScheme.tertiary
-    val errorColor     = MaterialTheme.colorScheme.error
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
-
-    val stateColor by animateColorAsState(
-        targetValue = when (uiState.voiceState) {
-            VoiceState.IDLE         -> surfaceVariant
-            VoiceState.LISTENING    -> primaryColor
-            VoiceState.THINKING     -> tertiaryColor
-            VoiceState.SPEAKING     -> secondaryColor
-            VoiceState.INTERRUPTING -> errorColor
-        },
-        animationSpec = tween(600),
-        label = "stateColor"
-    )
-
-    val modeColors = modeGradients[uiState.appMode]!!
-
-    val wordmarkTransition = rememberInfiniteTransition(label = "wordmark")
-    val shimmerPhase by wordmarkTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(2800, easing = LinearEasing),
-            RepeatMode.Reverse
-        ),
-        label = "shimmerPhase"
-    )
-    val shimmerBrush = Brush.linearGradient(
-        colors = listOf(
-            lerp(modeColors[0], modeColors[1], shimmerPhase),
-            lerp(modeColors[1], modeColors[0], shimmerPhase)
-        )
-    )
-
-    val showEmptyState = uiState.voiceState == VoiceState.IDLE &&
-        uiState.userTranscript.isEmpty() && uiState.aiResponse.isEmpty()
+    val isMissingCreds = uiState.pipelineReadiness is PipelineReadiness.MissingCredentials
+    val hasConversation = uiState.messages.isNotEmpty() ||
+            uiState.partialTranscript.isNotEmpty() ||
+            uiState.userTranscript.isNotEmpty() ||
+            uiState.aiResponse.isNotEmpty()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isSystemInDarkTheme()) Color(0xFF080C12) else MaterialTheme.colorScheme.surface)
-            .background(
-                Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color.Transparent,
-                        0.40f to stateColor.copy(alpha = 0.09f),
-                        0.68f to stateColor.copy(alpha = 0.07f),
-                        1.0f to Color.Transparent
-                    )
-                )
-            )
+            .background(ObsidianVoid)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
@@ -179,657 +161,879 @@ fun VoiceScreen(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            // ── Header ──────────────────────────────────────────────────────
+            // ── 1. Top Brandmark & Studio Action Header ──────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Settings icon — dot badge pulses when setup is pending
-                Box {
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(
-                            Icons.Rounded.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                alpha = if (showEmptyState) 0.90f else 0.65f
-                            )
+                // Official FluxVoice Wordmark with Fuchsia-Rose-Orange Gradient
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Flux",
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPureWhite,
+                            letterSpacing = (-0.5).sp
+                        )
+                        Text(
+                            text = "Voice",
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            style = TextStyle(brush = FluxGradient),
+                            letterSpacing = (-0.5).sp
                         )
                     }
-                    if (showEmptyState) {
+                    Text(
+                        text = "REAL-TIME VOICE AI PLAYGROUND",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.4.sp,
+                        color = TextSlateMuted
+                    )
+                    if (uiState.anonymousUsername.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
                         Box(
                             modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(end = 10.dp, top = 10.dp)
-                                .size(8.dp)
-                                .background(primaryColor, CircleShape)
-                        )
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(ObsidianCard)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = uiState.anonymousUsername,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = FluxCyan
+                            )
+                        }
                     }
                 }
 
                 Spacer(Modifier.weight(1f))
 
-                ModeBadge(
-                    appMode = uiState.appMode,
-                    onModeSelect = viewModel::updateAppMode
-                )
-
-                Spacer(Modifier.weight(1f))
-
-                if (uiState.userTranscript.isNotEmpty() || uiState.aiResponse.isNotEmpty()) {
-                    IconButton(onClick = viewModel::clearConversation) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = "Clear",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
-                        )
+                // Studio Actions Deck
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(onClick = { showGuideSheet = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.AutoMirrored.Rounded.HelpOutline, contentDescription = "User Guide", tint = FluxCyan, modifier = Modifier.size(18.dp))
                     }
-                } else {
-                    Spacer(Modifier.size(48.dp))
+                    IconButton(onClick = { onStudioClick(uiState.activePipeline?.id, false) }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.Tune, contentDescription = "Studio", tint = TextSlateMedium, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onBenchmarksClick, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.Speed, contentDescription = "Benchmarks", tint = TextSlateMedium, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onSettingsClick, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = TextSlateMedium, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
 
-            // ── Brand wordmark ───────────────────────────────────────────────
-            Text(
-                text = buildAnnotatedString {
-                    withStyle(
-                        SpanStyle(
-                            fontWeight = FontWeight.Light,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
-                        )
-                    ) { append("Flux") }
-                    withStyle(
-                        SpanStyle(
-                            fontWeight = FontWeight.Bold,
-                            brush = shimmerBrush
-                        )
-                    ) { append("Voice") }
-                },
-                fontSize = 30.sp,
-                letterSpacing = (-0.8).sp,
-                textAlign = TextAlign.Center
-            )
+            // ── 2. Active Pipeline Architecture (STT → LLM → TTS) ────────────
+            val active = uiState.activePipeline
+            val sttName = when (active?.sttProviderId) {
+                "deepgram" -> "Nova-3"
+                "groq_whisper" -> "Whisper Turbo"
+                "whisper" -> "Whisper"
+                "custom" -> "BYOK STT"
+                else -> active?.sttProviderId?.uppercase() ?: "NOVA-3"
+            }
+            val llmName = active?.llmModelId?.substringAfterLast('/')?.take(20)?.uppercase() ?: "GPT-OSS-120B"
+            val ttsName = when (active?.ttsProviderId) {
+                "cartesia" -> "Sonic 3.6"
+                "elevenlabs" -> "ElevenLabs"
+                "openai" -> "OpenAI"
+                "deepgram_aura" -> "Aura"
+                "android" -> "Android TTS"
+                "custom" -> "BYOK TTS"
+                else -> active?.ttsProviderId?.uppercase() ?: "CARTESIA"
+            }
 
-            Spacer(Modifier.height(4.dp))
-
-            // ── Conversation / empty-state area ─────────────────────────────
-            Box(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = ObsidianCard,
+                border = BorderStroke(1.dp, HairlineBorder)
             ) {
-                // Empty state — shown when idle with no conversation history
-                Box(Modifier.align(Alignment.Center)) {
-                    this@Column.AnimatedVisibility(
-                        visible = showEmptyState,
-                        enter = fadeIn(tween(500)),
-                        exit  = fadeOut(tween(250))
-                    ) {
-                        EmptyStateHints(onSettingsClick = onSettingsClick)
-                    }
-                }
-
-                // Live conversation — bottom-anchored, fades in as content arrives
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.BottomCenter),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    AnimatedVisibility(
-                        visible = uiState.aiResponse.isNotEmpty(),
-                        enter = fadeIn(tween(400)) + slideInVertically { -it / 4 },
-                        exit  = fadeOut(tween(300)) + slideOutVertically { -it / 4 }
-                    ) {
-                        AiResponseBubble(text = uiState.aiResponse)
-                    }
-
-                    val transcript = uiState.partialTranscript.ifEmpty { uiState.userTranscript }
-                    AnimatedVisibility(
-                        visible = transcript.isNotEmpty(),
-                        enter = fadeIn(tween(300)) + slideInVertically { it / 4 },
-                        exit  = fadeOut(tween(250))
-                    ) {
-                        UserTranscriptBubble(
-                            text = transcript,
-                            isPartial = uiState.partialTranscript.isNotEmpty()
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
+                    StackStageChip(label = "STT", value = sttName, color = FluxAzure)
+                    Text("→", fontSize = 12.sp, color = TextSlateDark)
+                    StackStageChip(label = "LLM", value = llmName, color = FluxEmerald)
+                    Text("→", fontSize = 12.sp, color = TextSlateDark)
+                    StackStageChip(label = "TTS", value = ttsName, color = FluxViolet)
                 }
             }
 
-            // ── FluxVoice tap target — the only tap target ────────────────────
-            FluxVoiceTapTarget(
+            // ── 3. Alert / Transient Error Banner ────────────────────────────
+            AnimatedVisibility(
+                visible = uiState.errorMessage != null,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                uiState.errorMessage?.let { msg ->
+                    val isSettingsError = msg.contains("Settings", ignoreCase = true)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp)
+                            .clickable(enabled = isSettingsError) { onSettingsClick() },
+                        shape = RoundedCornerShape(10.dp),
+                        color = ObsidianCard,
+                        border = BorderStroke(1.dp, HairlineFlame)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall.copy(color = TextSlateMedium),
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSettingsError) {
+                                Text(
+                                    text = "Settings ↗",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = FluxAmber
+                                )
+                            }
+                            IconButton(onClick = viewModel::dismissError, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Dismiss", tint = TextSlateMuted, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 4. Center Stage: Flux Spectral Core & Equalizer Wings ─────────
+            Spacer(Modifier.weight(0.3f))
+
+            LivingVoiceOrb(
                 voiceState = uiState.voiceState,
-                stateColor = stateColor,
                 onTap = {
                     when {
                         uiState.voiceState == VoiceState.IDLE &&
-                        ContextCompat.checkSelfPermission(
-                            context, Manifest.permission.RECORD_AUDIO
-                        ) != PackageManager.PERMISSION_GRANTED ->
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ->
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         else -> viewModel.onMicTap()
                     }
                 }
             )
 
-            // ── State label ──────────────────────────────────────────────────
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
 
-            Text(
-                text = when (uiState.voiceState) {
-                    VoiceState.IDLE         ->
-                        if (uiState.voiceMode == VoiceMode.ELEVENLABS) "ElevenLabs ready"
-                        else "Ready"
-                    VoiceState.LISTENING    -> "Listening to you"
-                    VoiceState.THINKING     -> "Thinking..."
-                    VoiceState.SPEAKING     -> "Speaking"
-                    VoiceState.INTERRUPTING -> "Stopping..."
-                },
-                style = MaterialTheme.typography.titleMedium,
-                color = if (uiState.voiceState == VoiceState.IDLE)
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f)
-                else
-                    stateColor,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(6.dp))
-
-            Text(
-                text = when (uiState.voiceState) {
-                    VoiceState.IDLE         -> "tap to speak"
-                    VoiceState.LISTENING    -> "tap to stop"
-                    VoiceState.SPEAKING     -> "tap to interrupt"
-                    else                    -> ""
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.32f),
-                textAlign = TextAlign.Center,
-                letterSpacing = 0.6.sp
-            )
-
-            // ── Error banner ─────────────────────────────────────────────────
-            AnimatedVisibility(
-                visible = uiState.errorMessage != null,
-                enter = fadeIn(tween(300)) + slideInVertically { it },
-                exit  = fadeOut(tween(250)) + slideOutVertically { it }
-            ) {
-                uiState.errorMessage?.let { msg ->
-                    ErrorBanner(message = msg, onDismiss = viewModel::dismissError)
-                }
-            }
-
-            Spacer(Modifier.height(52.dp))
-        }
-    }
-}
-
-// ── FluxVoice tap target ──────────────────────────────────────────────
-
-@Composable
-private fun FluxVoiceTapTarget(
-    voiceState: VoiceState,
-    stateColor: Color,
-    onTap: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    var isPressed by remember { mutableStateOf(false) }
-
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.91f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessHigh
-        ),
-        label = "pressScale"
-    )
-
-    Box(
-        modifier = Modifier
-            .size(280.dp)
-            .scale(pressScale)
-            .pointerInput(voiceState) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        tryAwaitRelease()
-                        isPressed = false
-                    },
-                    onTap = { onTap() }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        FluxVoice(
-            voiceState = voiceState,
-            stateColor = stateColor,
-            modifier = Modifier.fillMaxSize()
-        )
-    }
-}
-
-// ── Mode badge ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ModeBadge(appMode: AppMode, onModeSelect: (AppMode) -> Unit) {
-    val colors = modeGradients[appMode]!!
-    var expanded by remember { mutableStateOf(false) }
-
-    Box {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(colors.map { it.copy(alpha = 0.12f) }))
-                .border(1.dp, colors[0].copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 14.dp, vertical = 6.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(appMode.emoji, fontSize = 13.sp)
-                Text(
-                    appMode.displayName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors[0],
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text("▾", fontSize = 11.sp, color = colors[0].copy(alpha = 0.7f))
-            }
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            AppMode.entries.forEachIndexed { index, mode ->
-                val modeColors = modeGradients[mode]!!
-                val isActive = mode == appMode
-                DropdownMenuItem(
-                    text = {
+            if (isMissingCreds && !isQuickStartDismissed && uiState.voiceState == VoiceState.IDLE) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = ObsidianCard,
+                    border = BorderStroke(1.dp, HairlineFlame),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(mode.emoji, fontSize = 14.sp)
-                            Column {
-                                Text(
-                                    mode.displayName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isActive) modeColors[0]
-                                            else MaterialTheme.colorScheme.onSurface
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(FluxAmber, CircleShape)
                                 )
                                 Text(
-                                    mode.tagline,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "QUICK START • READY IN 2 CLICKS",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = FluxAmber,
+                                    letterSpacing = 0.8.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    isQuickStartDismissed = true
+                                    prefs.edit().putBoolean("quick_start_dismissed", true).apply()
+                                },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = "Dismiss Quick Start",
+                                    tint = TextSlateMuted,
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
-                    },
-                    onClick = {
-                        expanded = false
-                        if (mode != appMode) onModeSelect(mode)
+                        Text(
+                            text = "To start speaking, add your free key (Google Gemini or Groq take 30s) or explore with offline system voice.",
+                            fontSize = 12.sp,
+                            color = TextSlateMedium,
+                            lineHeight = 16.5.sp
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = onKeyVaultClick,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = FluxAzure),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1.1f)
+                            ) {
+                                Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(14.dp), tint = ObsidianVoid)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add Free Key", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ObsidianVoid)
+                            }
+                            OutlinedButton(
+                                onClick = { showGuideSheet = true },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, HairlineBorder),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPureWhite),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(0.9f)
+                            ) {
+                                Icon(Icons.AutoMirrored.Rounded.HelpOutline, contentDescription = null, modifier = Modifier.size(14.dp), tint = FluxCyan)
+                                Spacer(Modifier.width(6.dp))
+                                Text("User Guide", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = TextPureWhite)
+                            }
+                        }
                     }
+                }
+            } else {
+                // Pure, Responsive Voice State Typography
+                Text(
+                    text = when (uiState.voiceState) {
+                        VoiceState.IDLE         -> "Ready to talk • Tap to begin"
+                        VoiceState.LISTENING    -> "Listening to your voice…"
+                        VoiceState.THINKING     -> "Reasoning & generating stream…"
+                        VoiceState.SPEAKING     -> "Speaking • Tap to interrupt"
+                        VoiceState.INTERRUPTING -> "Stopping audio instantaneously…"
+                    },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = when (uiState.voiceState) {
+                        VoiceState.IDLE         -> TextSlateMedium
+                        VoiceState.LISTENING    -> FluxAzure
+                        VoiceState.THINKING     -> FluxViolet
+                        VoiceState.SPEAKING     -> TextPureWhite
+                        VoiceState.INTERRUPTING -> FluxRose
+                    },
+                    letterSpacing = 0.2.sp
                 )
-                if (index < AppMode.entries.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
+
+                Spacer(Modifier.height(6.dp))
+
+                // Telemetry Micro-Pill
+                BenchmarkHud(
+                    metrics = uiState.lastMetrics,
+                    isExpanded = uiState.isBenchmarkHudExpanded,
+                    onToggleExpand = viewModel::toggleBenchmarkHud
+                )
+            }
+
+            Spacer(Modifier.weight(0.2f))
+
+            // ── 5. Playground Experiments OR Live Dialogue Deck ──────────────
+            if (hasConversation) {
+                // Conversation Stream View
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .weight(1.2f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = ObsidianSurface,
+                    border = BorderStroke(1.dp, HairlineBorder)
+                ) {
+                    val scrollState = rememberScrollState()
+
+                    // Automatically scroll to bottom as new messages arrive or live tokens stream in
+                    LaunchedEffect(
+                        uiState.messages.size,
+                        uiState.aiResponse.length,
+                        uiState.partialTranscript.length
+                    ) {
+                        scrollState.animateScrollTo(scrollState.maxValue)
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "CONVERSATION STREAM",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.0.sp,
+                                    color = TextSlateMuted
+                                )
+                                if (uiState.messages.isNotEmpty()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = ObsidianCard,
+                                        border = BorderStroke(0.5.dp, HairlineHighlight)
+                                    ) {
+                                        Text(
+                                            text = "${uiState.messages.size} msgs",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = FluxCyan,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            IconButton(
+                                onClick = viewModel::clearConversation,
+                                modifier = Modifier.size(22.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Clear Conversation",
+                                    tint = TextSlateMuted,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 1. All historical turns in chronological order
+                            uiState.messages.forEach { message ->
+                                when (message.role) {
+                                    MessageRole.USER -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = ObsidianCard,
+                                            border = BorderStroke(1.dp, HairlineBorder),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Text(
+                                                    text = "YOU",
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = FluxAzure
+                                                )
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    text = message.content,
+                                                    fontSize = 13.5.sp,
+                                                    color = TextPureWhite,
+                                                    lineHeight = 19.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    MessageRole.ASSISTANT -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = ObsidianCard,
+                                            border = BorderStroke(1.dp, HairlineHighlight),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text(
+                                                        text = "FLUX AI",
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = FluxCyan
+                                                    )
+                                                    IconButton(
+                                                        onClick = {
+                                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                            val clip = ClipData.newPlainText("AI Response", message.content)
+                                                            clipboard?.setPrimaryClip(clip)
+                                                            Toast.makeText(context, "Copied response", Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        modifier = Modifier.size(20.dp)
+                                                    ) {
+                                                        Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = TextSlateMuted, modifier = Modifier.size(12.dp))
+                                                    }
+                                                }
+                                                Spacer(Modifier.height(3.dp))
+                                                Text(
+                                                    text = message.content,
+                                                    fontSize = 13.5.sp,
+                                                    color = TextPureWhite,
+                                                    lineHeight = 19.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    MessageRole.SYSTEM -> {}
+                                }
+                            }
+
+                            // 2. In-progress Live User Transcription (only while actively listening or thinking)
+                            val isUserTranscriptAlreadyInMessages = uiState.userTranscript.isNotBlank() && uiState.messages.any {
+                                it.role == MessageRole.USER && it.content.trim().equals(uiState.userTranscript.trim(), ignoreCase = true)
+                            }
+
+                            val liveUserText = when {
+                                uiState.voiceState == VoiceState.IDLE -> ""
+                                uiState.partialTranscript.isNotBlank() -> uiState.partialTranscript
+                                uiState.userTranscript.isNotBlank() && !isUserTranscriptAlreadyInMessages -> uiState.userTranscript
+                                else -> ""
+                            }
+
+                            if (liveUserText.isNotEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = ObsidianCard,
+                                    border = BorderStroke(1.dp, HairlineHighlight),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = if (uiState.voiceState == VoiceState.LISTENING) "YOU (LISTENING…)" else "YOU",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = FluxAzure
+                                            )
+                                            if (uiState.voiceState == VoiceState.LISTENING) {
+                                                Box(Modifier.size(5.dp).background(FluxAzure, CircleShape))
+                                            }
+                                        }
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = liveUserText,
+                                            fontSize = 13.5.sp,
+                                            color = TextPureWhite,
+                                            lineHeight = 19.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 3. In-progress Live AI Streaming (while generating / speaking)
+                            val isAiResponseAlreadyInMessages = uiState.aiResponse.isNotBlank() && uiState.messages.any {
+                                it.role == MessageRole.ASSISTANT && it.content.trim().equals(uiState.aiResponse.trim(), ignoreCase = true)
+                            }
+
+                            if (uiState.aiResponse.isNotBlank() && !isAiResponseAlreadyInMessages) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = ObsidianCard,
+                                    border = BorderStroke(1.dp, HairlineHighlight),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "FLUX AI",
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = FluxCyan
+                                                )
+                                                if (uiState.voiceState == VoiceState.SPEAKING || uiState.voiceState == VoiceState.THINKING) {
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                        Box(Modifier.size(4.dp).background(FluxViolet, CircleShape))
+                                                        Box(Modifier.size(4.dp).background(FluxRose, CircleShape))
+                                                        Box(Modifier.size(4.dp).background(FluxAzure, CircleShape))
+                                                    }
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                    val clip = ClipData.newPlainText("AI Response", uiState.aiResponse)
+                                                    clipboard?.setPrimaryClip(clip)
+                                                    Toast.makeText(context, "Copied response", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(20.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = TextSlateMuted, modifier = Modifier.size(12.dp))
+                                            }
+                                        }
+                                        Spacer(Modifier.height(3.dp))
+                                        Text(
+                                            text = uiState.aiResponse,
+                                            fontSize = 13.5.sp,
+                                            color = TextPureWhite,
+                                            lineHeight = 19.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Interactive Dynamic Scenario Starters
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(Brush.radialGradient(listOf(FluxAzure, FluxViolet)), CircleShape)
+                            )
+                            Text(
+                                text = "TRENDING & ADAPTIVE SCENARIOS",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.0.sp,
+                                color = TextSlateMedium
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = if (uiState.isShufflingScenarios) "Generating…" else "Shuffle",
+                                fontSize = 10.sp,
+                                color = if (uiState.isShufflingScenarios) FluxCyan else TextSlateDark
+                            )
+                            IconButton(
+                                onClick = viewModel::shuffleScenarios,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Shuffle Trending Scenarios",
+                                    tint = if (uiState.isShufflingScenarios) FluxCyan else TextSlateMuted,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        uiState.scenarios.forEach { scenario ->
+                            ExperimentCard(
+                                scenario = scenario,
+                                onClick = { viewModel.triggerPrompt(scenario.prompt) }
+                            )
+                        }
+                    }
                 }
             }
-        }
-    }
-}
 
-// ── Empty state ────────────────────────────────────────────────────────────────
+            Spacer(Modifier.height(14.dp))
 
-@Composable
-private fun EmptyStateHints(onSettingsClick: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Capability pills
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FeaturePill("⚡ Instant", Modifier.weight(1f))
-            FeaturePill("🎙 Natural", Modifier.weight(1f))
-            FeaturePill("🧠 Smart", Modifier.weight(1f))
-        }
-
-        // Settings nudge — tappable card pointing users toward configuration
-        Surface(
-            onClick = onSettingsClick,
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-            )
-        ) {
-            Row(
+            // ── 6. Ergonomic Playground Bottom Deck ──────────────────────────
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = ObsidianSurface,
+                border = BorderStroke(1.dp, HairlineBorder)
             ) {
-                Icon(
-                    Icons.Rounded.Tune,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp)
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Configure your AI",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        "Choose provider, voice & model",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Left: Active Pipeline Runtime Drawer Trigger
+                    val pipelineName = uiState.activePipeline?.name ?: "Ultra-Fast Cloud"
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { showPipelineSheet = true },
+                        shape = RoundedCornerShape(20.dp),
+                        color = ObsidianCard,
+                        border = BorderStroke(1.dp, HairlineBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = pipelineName.take(16).uppercase(),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.6.sp,
+                                color = TextPureWhite
+                            )
+                            Icon(
+                                Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = "Switch Pipeline",
+                                tint = TextSlateMedium,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+
+                    // Center: Floating Radiant Multi-Gradient Voice Trigger
+                    val isListening = uiState.voiceState == VoiceState.LISTENING
+                    val isSpeaking = uiState.voiceState == VoiceState.SPEAKING
+                    Box(
+                        modifier = Modifier
+                            .size(62.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isListening || isSpeaking) FluxFullSpectrum else Brush.linearGradient(listOf(ObsidianCard, ObsidianFloat))
+                            )
+                            .padding(2.5.dp)
+                            .clip(CircleShape)
+                            .background(if (isListening) FluxAzure else if (isSpeaking) ObsidianCard else ObsidianFloat)
+                            .clickable {
+                                when {
+                                    uiState.voiceState == VoiceState.IDLE &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ->
+                                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    else -> viewModel.onMicTap()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = when (uiState.voiceState) {
+                                VoiceState.SPEAKING     -> Icons.Rounded.Stop
+                                else                    -> Icons.Rounded.Mic
+                            },
+                            contentDescription = "Voice Control",
+                            tint = if (isListening) ObsidianVoid else if (isSpeaking) FluxRose else TextPureWhite,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    // Right: Hardware Vault Keystore Capsule
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { onKeyVaultClick() },
+                        shape = RoundedCornerShape(20.dp),
+                        color = ObsidianCard,
+                        border = BorderStroke(1.dp, if (isMissingCreds) HairlineFlame else HairlineBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(if (isMissingCreds) FluxAmber else FluxEmerald, CircleShape)
+                            )
+                            Text(
+                                text = if (isMissingCreds) "SETUP" else "VAULT",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.8.sp,
+                                color = if (isMissingCreds) FluxAmber else TextSlateMedium
+                            )
+                        }
+                    }
                 }
-                Icon(
-                    Icons.Rounded.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.40f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
+
+            Spacer(Modifier.height(4.dp))
+        }
+
+        // Pipeline Switcher Modal Sheet
+        if (showPipelineSheet) {
+            PipelineSelectorSheet(
+                pipelines = allPipelines,
+                selectedPipelineId = uiState.activePipeline?.id ?: "preset_ultra_fast",
+                onSelectPipeline = viewModel::selectPipeline,
+                onAddNewPipeline = { onStudioClick(null, true) },
+                onOpenStudio = { onStudioClick(uiState.activePipeline?.id, false) },
+                onEditPipeline = { pipeline -> onStudioClick(pipeline.id, false) },
+                onDeletePipeline = viewModel::deletePipeline,
+                onDismiss = {
+                    showPipelineSheet = false
+                    viewModel.refreshReadiness()
+                }
+            )
+        }
+
+        // Quick Guide & Cheat Sheet Modal
+        if (showGuideSheet) {
+            QuickGuideSheet(
+                onDismiss = { showGuideSheet = false },
+                onGotIt = {
+                    showGuideSheet = false
+                    isQuickStartDismissed = true
+                    prefs.edit().putBoolean("quick_start_dismissed", true).apply()
+                },
+                onOpenKeyVault = onKeyVaultClick,
+                onOpenStudio = { onStudioClick(uiState.activePipeline?.id, false) },
+                onOpenCatalog = onCatalogClick,
+                allPipelines = allPipelines,
+                selectedPipelineId = uiState.activePipeline?.id ?: "preset_ultra_fast",
+                onSelectPipeline = { pipeline ->
+                    viewModel.selectPipeline(pipeline)
+                    viewModel.refreshReadiness()
+                }
+            )
         }
     }
 }
 
 @Composable
-private fun FeaturePill(label: String, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = modifier
+private fun StackStageChip(
+    label: String,
+    value: String,
+    color: Color
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 9.dp)
+            fontFamily = FontFamily.Monospace,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = color
         )
-    }
-}
-
-// ── Conversation bubbles ───────────────────────────────────────────────────────
-
-@Composable
-private fun AiResponseBubble(text: String) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
         Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-            maxLines = 6,
-            overflow = TextOverflow.Ellipsis
+            text = value,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPureWhite
         )
     }
 }
 
 @Composable
-private fun UserTranscriptBubble(text: String, isPartial: Boolean) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
-    ) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            tonalElevation = 2.dp,
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontStyle = if (isPartial) FontStyle.Italic else FontStyle.Normal
-                ),
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
-            )
-        }
-    }
-}
-
-// ── Error banner ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 10.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.90f))
-            .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.weight(1f)
-        )
-        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-            Icon(
-                Icons.Rounded.Close,
-                contentDescription = "Dismiss",
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-    }
-}
-
-// ── FluxVoice visual (Canvas with bloom, arcs, specular) ─────────────────────
-
-@Composable
-private fun FluxVoice(
-    voiceState: VoiceState,
-    stateColor: Color,
-    modifier: Modifier = Modifier
+private fun ExperimentCard(
+    scenario: VoiceScenario,
+    onClick: () -> Unit
 ) {
-    val isActive = voiceState != VoiceState.IDLE
-    val infiniteTransition = rememberInfiniteTransition(label = "fluxVoice")
-
-    // Core pulse — drives the main FluxVoice body
-    val pulse1 by infiniteTransition.animateFloat(
-        initialValue = 0.90f,
-        targetValue = when (voiceState) {
-            VoiceState.IDLE         -> 1.02f
-            VoiceState.LISTENING    -> 1.18f
-            VoiceState.THINKING     -> 1.10f
-            VoiceState.SPEAKING     -> 1.16f
-            VoiceState.INTERRUPTING -> 1.06f
-        },
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (voiceState) {
-                    VoiceState.IDLE         -> 2600
-                    VoiceState.LISTENING    -> 550
-                    VoiceState.THINKING     -> 480
-                    VoiceState.SPEAKING     -> 780
-                    VoiceState.INTERRUPTING -> 380
-                },
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse1"
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1.0f,
+        animationSpec = tween(90),
+        label = "experimentCardScale"
     )
 
-    // Outer halo pulse — offset timing for organic feel
-    val pulse2 by infiniteTransition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = when (voiceState) {
-            VoiceState.IDLE         -> 1.08f
-            VoiceState.LISTENING    -> 1.28f
-            VoiceState.THINKING     -> 1.18f
-            VoiceState.SPEAKING     -> 1.22f
-            VoiceState.INTERRUPTING -> 1.12f
-        },
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (voiceState) {
-                    VoiceState.IDLE         -> 3400
-                    VoiceState.LISTENING    -> 820
-                    VoiceState.THINKING     -> 660
-                    VoiceState.SPEAKING     -> 1100
-                    VoiceState.INTERRUPTING -> 560
-                },
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse2"
-    )
-
-    // Spinning arc — continuously rotates in active states
-    val arcRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (voiceState) {
-                    VoiceState.THINKING     -> 1600
-                    VoiceState.SPEAKING     -> 2200
-                    VoiceState.INTERRUPTING -> 1000
-                    else                    -> 2000
-                },
-                easing = LinearEasing
-            ),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "arcRotation"
-    )
-
-    // Arc fades in/out when transitioning between idle and active
-    val arcAlpha by animateFloatAsState(
-        targetValue = if (isActive) 0.75f else 0f,
-        animationSpec = tween(500),
-        label = "arcAlpha"
-    )
-
-    Canvas(modifier = modifier) {
-        val center     = Offset(size.width / 2f, size.height / 2f)
-        val baseRadius = size.minDimension / 2f * 0.38f
-
-        // ── Layer 1: Outermost ambient halo ───────────────────────────────────
-        drawCircle(
-            color  = stateColor.copy(alpha = 0.055f),
-            radius = baseRadius * pulse2 * 1.90f,
-            center = center
-        )
-
-        // ── Layer 2: Mid glow ring ────────────────────────────────────────────
-        drawCircle(
-            color  = stateColor.copy(alpha = 0.10f),
-            radius = baseRadius * pulse2 * 1.46f,
-            center = center
-        )
-
-        // ── Layer 3: Inner glow (active only) ────────────────────────────────
-        if (isActive) {
-            drawCircle(
-                color  = stateColor.copy(alpha = 0.20f),
-                radius = baseRadius * pulse1 * 1.22f,
-                center = center
-            )
-        }
-
-        // ── Spinning arc rings ────────────────────────────────────────────────
-        if (arcAlpha > 0.01f) {
-            val arcRadius = baseRadius * 1.38f
-            rotate(degrees = arcRotation, pivot = center) {
-                // Primary arc (leading)
-                drawArc(
-                    color      = stateColor.copy(alpha = arcAlpha * 0.80f),
-                    startAngle = -90f,
-                    sweepAngle = 115f,
-                    useCenter  = false,
-                    style      = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
-                    topLeft    = Offset(center.x - arcRadius, center.y - arcRadius),
-                    size       = Size(arcRadius * 2, arcRadius * 2)
-                )
-                // Counter arc (trailing, shorter and fainter)
-                drawArc(
-                    color      = stateColor.copy(alpha = arcAlpha * 0.32f),
-                    startAngle = 110f,
-                    sweepAngle = 55f,
-                    useCenter  = false,
-                    style      = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
-                    topLeft    = Offset(center.x - arcRadius, center.y - arcRadius),
-                    size       = Size(arcRadius * 2, arcRadius * 2)
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isPressed) ObsidianFloat else ObsidianCard,
+        border = BorderStroke(1.dp, if (isPressed) HairlineHighlight else HairlineBorder),
+        modifier = Modifier
+            .width(170.dp)
+            .scale(scale)
+            .clip(RoundedCornerShape(10.dp))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
+                    onTap = { onClick() }
                 )
             }
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(scenario.icon, fontSize = 13.sp)
+                Text(
+                    text = scenario.title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.5.sp,
+                    color = TextPureWhite,
+                    maxLines = 1
+                )
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = scenario.subtitle,
+                fontSize = 9.5.sp,
+                color = TextSlateMuted,
+                maxLines = 1
+            )
         }
-
-        // ── Core FluxVoice sphere — radial gradient ───────────────────────────
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    stateColor.copy(alpha = 1.0f),
-                    stateColor.copy(alpha = 0.78f),
-                    stateColor.copy(alpha = 0.50f)
-                ),
-                center = center,
-                radius = baseRadius * pulse1
-            ),
-            radius = baseRadius * pulse1,
-            center = center
-        )
-
-        // ── Specular highlight — glass lens effect ────────────────────────────
-        val hlRadius = baseRadius * pulse1 * 0.27f
-        val hlOffset = baseRadius * pulse1 * 0.30f
-        val hlCenter = Offset(center.x - hlOffset, center.y - hlOffset)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = if (isActive) 0.38f else 0.22f),
-                    Color.Transparent
-                ),
-                center = hlCenter,
-                radius = hlRadius
-            ),
-            radius = hlRadius,
-            center = hlCenter
-        )
     }
 }

@@ -1,18 +1,30 @@
 package com.techrifter.fluxvoice.ui.screen.voice
 
 import android.app.Activity
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.techrifter.fluxvoice.core.model.TurnMetrics
 import com.techrifter.fluxvoice.core.util.DispatcherProvider
 import com.techrifter.fluxvoice.data.audio.SharedAudioCapture
 import com.techrifter.fluxvoice.data.audio.VoiceActivityDetector
+import com.techrifter.fluxvoice.data.auth.FirebaseAuthService
 import com.techrifter.fluxvoice.data.elevenlabs.ElevenLabsVoiceSession
+import com.techrifter.fluxvoice.data.local.db.TurnBenchmarkEntity
+import com.techrifter.fluxvoice.data.remote.scenario.VoiceScenarioService
 import com.techrifter.fluxvoice.domain.model.AppMode
 import com.techrifter.fluxvoice.domain.model.AppSettings
+import com.techrifter.fluxvoice.domain.model.Message
+import com.techrifter.fluxvoice.domain.model.MessageRole
+import com.techrifter.fluxvoice.domain.model.PipelineConfig
 import com.techrifter.fluxvoice.domain.model.VoiceMode
+import com.techrifter.fluxvoice.domain.pipeline.PipelineReadiness
+import com.techrifter.fluxvoice.domain.pipeline.PipelineSessionManager
 import com.techrifter.fluxvoice.domain.repository.ConversationRepository
+import com.techrifter.fluxvoice.domain.repository.PipelineRepository
 import com.techrifter.fluxvoice.domain.repository.SettingsRepository
+import com.techrifter.fluxvoice.domain.repository.TurnBenchmarkRepository
 import com.techrifter.fluxvoice.domain.stt.SttEngine
 import com.techrifter.fluxvoice.domain.stt.SttState
 import com.techrifter.fluxvoice.domain.streaming.StreamEvent
@@ -60,9 +72,12 @@ class VoiceViewModel @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val elevenLabsSession: ElevenLabsVoiceSession,
     private val vadDetector: VoiceActivityDetector,
-    /** Shared mic capture — held alive for the duration of the voice session so the
-     *  AudioRecord never stops between turns (eliminates the broken-pipe race window). */
-    private val sharedAudioCapture: SharedAudioCapture
+    private val sharedAudioCapture: SharedAudioCapture,
+    private val pipelineSessionManager: PipelineSessionManager,
+    private val pipelineRepository: PipelineRepository,
+    private val turnBenchmarkRepository: TurnBenchmarkRepository,
+    private val voiceScenarioService: VoiceScenarioService,
+    private val firebaseAuthService: FirebaseAuthService
 ) : ViewModel() {
 
     companion object {
@@ -79,8 +94,20 @@ class VoiceViewModel @Inject constructor(
         private const val BACKCHANNEL_DELAY_MS = 1_500L
     }
 
+    // ── Realtime Stopwatch & Benchmarking ──────────────────────────────────────
+    private var turnStartRealtime = 0L
+    private var sttFinalRealtime = 0L
+    private var firstTokenRealtime = 0L
+    private var firstAudioRealtime = 0L
+    private var promptTokensCount = 0
+    private var completionTokensCount = 0
+    private var bargeInFlag = false
+
     private val _uiState = MutableStateFlow(VoiceUiState())
     val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
+
+    val allPipelines: StateFlow<List<PipelineConfig>> = pipelineRepository.getAllPipelines()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Cached settings — updated reactively. */
     private val settings: StateFlow<AppSettings> = settingsRepository.getSettings()
@@ -120,10 +147,36 @@ class VoiceViewModel @Inject constructor(
 
     init {
         Log.d(TAG, "VoiceViewModel created")
+        val initialScenarios = voiceScenarioService.getInitialScenarios()
+        _uiState.update { it.copy(scenarios = initialScenarios) }
+        viewModelScope.launch(dispatchers.io) {
+            val fresh = voiceScenarioService.refreshScenarios()
+            _uiState.update { it.copy(scenarios = fresh) }
+        }
         observeSttState()
         observeTtsState()
         observeSettingsChanges()
         observeElevenLabsSession()
+        observeActivePipeline()
+        observeConversationHistory()
+    }
+
+    private fun observeConversationHistory() {
+        viewModelScope.launch {
+            conversationRepository.historyFlow.collect { history ->
+                _uiState.update { it.copy(messages = history) }
+            }
+        }
+    }
+
+    private fun observeActivePipeline() {
+        viewModelScope.launch {
+            pipelineRepository.ensureDefaultPresets()
+            pipelineSessionManager.observeActivePipeline().collect { pipeline ->
+                val readiness = pipeline?.let { pipelineSessionManager.checkReadiness(it) } ?: PipelineReadiness.Ready
+                _uiState.update { it.copy(activePipeline = pipeline, pipelineReadiness = readiness) }
+            }
+        }
     }
 
     // ── Active session keep-alive ─────────────────────────────────────────────
@@ -170,6 +223,9 @@ class VoiceViewModel @Inject constructor(
                 if (settings.value.voiceMode != VoiceMode.STANDARD) return@collect
                 when (sttState) {
                     SttState.Listening -> {
+                        if (turnStartRealtime == 0L) {
+                            turnStartRealtime = SystemClock.elapsedRealtime()
+                        }
                         _uiState.update { it.copy(voiceState = VoiceState.LISTENING) }
                         // Safety net: if TTS is somehow still active when mic opens, kill it.
                         interruptTtsIfSpeaking()
@@ -181,14 +237,15 @@ class VoiceViewModel @Inject constructor(
                         _uiState.update { it.copy(partialTranscript = sttState.text) }
                         // User is actively speaking — reset the timeout window.
                         armNoSpeechTimeout()
-                        // NOTE: do NOT call interruptTtsIfSpeaking() here.
-                        // Doing so creates an echo loop: mic picks up TTS output →
-                        // Deepgram emits PartialResult → we stop TTS → echo text becomes
-                        // FinalResult → AI replies to its own words → infinite cycle.
-                        // Hardware AEC on SharedAudioCapture suppresses this at the source.
                     }
                     is SttState.FinalResult -> {
                         cancelNoSpeechTimeout()
+                        sttFinalRealtime = SystemClock.elapsedRealtime()
+                        firstTokenRealtime = 0L
+                        firstAudioRealtime = 0L
+                        promptTokensCount = 0
+                        completionTokensCount = 0
+                        bargeInFlag = false
                         Log.d(TAG, "STT FinalResult: '${sttState.text}'")
                         // Close the mic immediately — TTS is about to start.
                         sttEngine.stopListening()
@@ -231,6 +288,9 @@ class VoiceViewModel @Inject constructor(
                 if (settings.value.voiceMode != VoiceMode.STANDARD) return@collect
                 when (ttsState) {
                     TtsState.Speaking -> {
+                        if (firstAudioRealtime == 0L) {
+                            firstAudioRealtime = SystemClock.elapsedRealtime()
+                        }
                         _uiState.update { it.copy(voiceState = VoiceState.SPEAKING) }
                         // Hard mutual-exclusion guarantee: STT mic must be OFF while TTS speaks.
                         sttEngine.stopListening()
@@ -277,6 +337,17 @@ class VoiceViewModel @Inject constructor(
                             else -> null
                         }
                         if (msg != null) _uiState.update { it.copy(errorMessage = msg) }
+
+                        // If streaming has completed or LLM streaming job is done, TTS error means
+                        // playback will not finish via TtsState.Idle. Finalize the turn immediately
+                        // so voiceState and transcripts are not left in limbo.
+                        val jobDone = streamingJob?.isCompleted == true
+                        if (isStreamingComplete || jobDone) {
+                            Log.d(TAG, "TTS error with streaming complete → finishing turn")
+                            finishTurnAndRestart()
+                        } else if (_uiState.value.voiceState == VoiceState.SPEAKING) {
+                            _uiState.update { it.copy(voiceState = VoiceState.IDLE, userTranscript = "", aiResponse = "") }
+                        }
                     }
                 }
             }
@@ -308,6 +379,7 @@ class VoiceViewModel @Inject constructor(
             }
             return
         }
+        bargeInFlag = true
         backchannelJob?.cancel()
         backchannelJob = null
         streamingJob?.cancel()
@@ -367,6 +439,7 @@ class VoiceViewModel @Inject constructor(
     private fun interruptTtsIfSpeaking() {
         if (ttsEngine.state.value != TtsState.Speaking) return
         Log.d(TAG, "interruptTtsIfSpeaking: stopping TTS — user is speaking")
+        bargeInFlag = true
         backchannelJob?.cancel()
         backchannelJob = null
         streamingJob?.cancel()
@@ -403,13 +476,19 @@ class VoiceViewModel @Inject constructor(
         viewModelScope.launch {
             elevenLabsSession.userTranscript.collect { text ->
                 if (settings.value.voiceMode != VoiceMode.ELEVENLABS) return@collect
-                if (text.isNotBlank()) _uiState.update { it.copy(userTranscript = text) }
+                if (text.isNotBlank()) {
+                    _uiState.update { it.copy(userTranscript = text) }
+                    conversationRepository.addMessage(Message(role = MessageRole.USER, content = text))
+                }
             }
         }
         viewModelScope.launch {
             elevenLabsSession.aiResponse.collect { text ->
                 if (settings.value.voiceMode != VoiceMode.ELEVENLABS) return@collect
-                if (text.isNotBlank()) _uiState.update { it.copy(aiResponse = text) }
+                if (text.isNotBlank()) {
+                    _uiState.update { it.copy(aiResponse = text) }
+                    conversationRepository.addMessage(Message(role = MessageRole.ASSISTANT, content = text))
+                }
             }
         }
         viewModelScope.launch {
@@ -430,7 +509,16 @@ class VoiceViewModel @Inject constructor(
             settingsRepository.getSettings().collect { s ->
                 ttsEngine.setSpeechRate(s.ttsSpeechRate)
                 ttsEngine.setPitch(s.ttsPitch)
-                _uiState.update { it.copy(voiceMode = s.voiceMode, appMode = s.appMode) }
+                val active = _uiState.value.activePipeline
+                val readiness = active?.let { pipelineSessionManager.checkReadiness(it) } ?: PipelineReadiness.Ready
+                _uiState.update {
+                    it.copy(
+                        voiceMode = s.voiceMode,
+                        appMode = s.appMode,
+                        pipelineReadiness = readiness,
+                        anonymousUsername = s.anonymousUsername
+                    )
+                }
             }
         }
     }
@@ -447,6 +535,7 @@ class VoiceViewModel @Inject constructor(
      *   IDLE → start session | any active state → end session
      */
     fun updateAppMode(mode: AppMode) = viewModelScope.launch {
+        bargeInFlag = false
         backchannelJob?.cancel()
         backchannelJob = null
         streamingJob?.cancel()
@@ -464,6 +553,59 @@ class VoiceViewModel @Inject constructor(
             AppMode.FAST     -> settingsRepository.applyFastPreset()
             AppMode.THINKING -> settingsRepository.applyThinkingPreset()
             AppMode.CUSTOM   -> settingsRepository.applyCustomPreset()
+        }
+    }
+
+    fun triggerPrompt(prompt: String) {
+        if (_uiState.value.voiceState == VoiceState.SPEAKING) {
+            ttsEngine.stop()
+        }
+        val active = _uiState.value.activePipeline
+        if (active != null) {
+            val readiness = pipelineSessionManager.checkReadiness(active)
+            if (readiness is PipelineReadiness.MissingCredentials) {
+                _uiState.update {
+                    it.copy(
+                        errorMessage = readiness.formatErrorMessage("Settings"),
+                        pipelineReadiness = readiness
+                    )
+                }
+                return
+            }
+        }
+        if (turnStartRealtime == 0L) {
+            turnStartRealtime = SystemClock.elapsedRealtime()
+        }
+        sttFinalRealtime = turnStartRealtime
+        firstTokenRealtime = 0L
+        firstAudioRealtime = 0L
+        promptTokensCount = 0
+        completionTokensCount = 0
+        bargeInFlag = false
+        _uiState.update {
+            it.copy(
+                voiceState = VoiceState.THINKING,
+                userTranscript = prompt,
+                partialTranscript = "",
+                aiResponse = ""
+            )
+        }
+        startAiResponse(prompt)
+    }
+
+    fun shuffleScenarios() {
+        if (_uiState.value.isShufflingScenarios) return
+        _uiState.update { it.copy(isShufflingScenarios = true) }
+        viewModelScope.launch(dispatchers.io) {
+            val fresh = voiceScenarioService.refreshScenarios()
+            _uiState.update { it.copy(scenarios = fresh, isShufflingScenarios = false) }
+        }
+    }
+
+    fun toggleVad() {
+        val current = settings.value.vadEnabled
+        viewModelScope.launch {
+            settingsRepository.updateVadEnabled(!current)
         }
     }
 
@@ -497,7 +639,22 @@ class VoiceViewModel @Inject constructor(
 
     private fun handleStandardTap() {
         when (_uiState.value.voiceState) {
-            VoiceState.IDLE         -> startListening()
+            VoiceState.IDLE         -> {
+                val active = _uiState.value.activePipeline
+                if (active != null) {
+                    val readiness = pipelineSessionManager.checkReadiness(active)
+                    if (readiness is PipelineReadiness.MissingCredentials) {
+                        _uiState.update {
+                            it.copy(
+                                errorMessage = readiness.formatErrorMessage("Settings"),
+                                pipelineReadiness = readiness
+                            )
+                        }
+                        return
+                    }
+                }
+                startListening()
+            }
             VoiceState.LISTENING    -> {
                 sttEngine.stopListening()
                 _uiState.update { it.copy(voiceState = VoiceState.IDLE) }
@@ -529,6 +686,7 @@ class VoiceViewModel @Inject constructor(
     }
 
     fun clearConversation() {
+        bargeInFlag = false
         backchannelJob?.cancel()
         backchannelJob = null
         streamingJob?.cancel()
@@ -547,6 +705,7 @@ class VoiceViewModel @Inject constructor(
                 partialTranscript = "",
                 userTranscript    = "",
                 aiResponse        = "",
+                messages          = emptyList(),
                 errorMessage      = null
             )
         }
@@ -556,18 +715,49 @@ class VoiceViewModel @Inject constructor(
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    fun toggleBenchmarkHud() {
+        _uiState.update { it.copy(isBenchmarkHudExpanded = !it.isBenchmarkHudExpanded) }
+    }
+
+    fun selectPipeline(pipeline: PipelineConfig) {
+        viewModelScope.launch {
+            pipelineSessionManager.activatePipeline(pipeline)
+            val readiness = pipelineSessionManager.checkReadiness(pipeline)
+            _uiState.update { it.copy(activePipeline = pipeline, pipelineReadiness = readiness) }
+        }
+    }
+
+    fun deletePipeline(pipeline: PipelineConfig) {
+        viewModelScope.launch {
+            pipelineRepository.deletePipeline(pipeline.id)
+            if (_uiState.value.activePipeline?.id == pipeline.id) {
+                val fallback = pipelineRepository.getPipelineById("preset_ultra_fast")
+                if (fallback != null) {
+                    selectPipeline(fallback)
+                }
+            }
+            refreshReadiness()
+        }
+    }
+
+    fun refreshReadiness() {
+        val active = _uiState.value.activePipeline ?: return
+        val readiness = pipelineSessionManager.checkReadiness(active)
+        _uiState.update { it.copy(pipelineReadiness = readiness) }
+    }
+
     // ── Internal pipeline ─────────────────────────────────────────────────────
 
     private fun startListening() {
         // Hard guard: never open the mic while TTS is playing.
         if (ttsEngine.state.value == TtsState.Speaking) {
-            Log.w(TAG, "startListening: skipped — TTS still speaking")
+            Log.w(TAG, "startListening: skipped: TTS still speaking")
             return
         }
         // Ensure the shared AudioRecord stays alive for the whole session so there
         // is no stop/restart gap between turns (which causes the broken-pipe race).
         acquireCaptureSession()
-        _uiState.update { it.copy(partialTranscript = "", voiceState = VoiceState.LISTENING) }
+        _uiState.update { it.copy(partialTranscript = "", userTranscript = "", voiceState = VoiceState.LISTENING) }
         sttEngine.startListening()
     }
 
@@ -614,7 +804,8 @@ class VoiceViewModel @Inject constructor(
                 wordCount <= 10 -> "\nRespond in 1–2 sentences."
                 else            -> "" // let the model decide for complex queries
             }
-            val effectivePrompt = settings.value.systemPrompt + lengthHint
+            val voiceDirective = "\nSpeak directly in natural conversational prose suitable for real-time voice output. Never use pleasantry preamble (like 'Sure!' or 'Certainly!'), markdown symbols, bullet points, tables, code blocks, or emojis. Use punctuation to guide natural spoken pacing."
+            val effectivePrompt = settings.value.systemPrompt.trim() + " " + voiceDirective + lengthHint
 
             try {
                 conversationRepository.streamResponse(userInput, effectivePrompt)
@@ -625,6 +816,9 @@ class VoiceViewModel @Inject constructor(
                                 _uiState.update { it.copy(voiceState = VoiceState.THINKING) }
                             }
                             is StreamEvent.Token -> {
+                                if (firstTokenRealtime == 0L) {
+                                    firstTokenRealtime = SystemClock.elapsedRealtime()
+                                }
                                 // First token arrived — cancel the pending backchannel so it
                                 // never fires. If it already fired (slow model), this is a no-op.
                                 backchannelJob?.cancel()
@@ -637,6 +831,9 @@ class VoiceViewModel @Inject constructor(
                                 if (settings.value.ttsEnabled) {
                                     val wasBackchannel = isBackchannelPhase
                                     extractSentences(tokenBuffer).forEach { sentence ->
+                                        if (firstAudioRealtime == 0L) {
+                                            firstAudioRealtime = SystemClock.elapsedRealtime()
+                                        }
                                         // First LLM sentence spoken → backchannel phase ends.
                                         isBackchannelPhase = false
                                         ttsEngine.speak(sentence, UUID.randomUUID().toString())
@@ -660,22 +857,27 @@ class VoiceViewModel @Inject constructor(
                                     _uiState.update { it.copy(voiceState = VoiceState.SPEAKING) }
                                 }
                             }
+                            is StreamEvent.Usage -> {
+                                promptTokensCount = event.promptTokens
+                                completionTokensCount = event.completionTokens
+                                Log.d(TAG, "Usage: prompt=$promptTokensCount, completion=$completionTokensCount")
+                            }
                             StreamEvent.Done -> {
                                 Log.d(TAG, "StreamEvent.Done, ttsEnabled=${settings.value.ttsEnabled}")
                                 val remaining = tokenBuffer.toString().trim()
                                 if (remaining.isNotEmpty() && settings.value.ttsEnabled) {
                                     isBackchannelPhase = false   // final chunk = real LLM content
+                                    if (firstAudioRealtime == 0L) {
+                                        firstAudioRealtime = SystemClock.elapsedRealtime()
+                                    }
                                     ttsEngine.speak(remaining, UUID.randomUUID().toString())
                                 } else {
                                     isBackchannelPhase = false
                                 }
                                 tokenBuffer.clear()
                                 isStreamingComplete = true
-                                // When TTS is disabled there is no TtsState.Idle coming — finish now.
-                                // When TTS is enabled, let observeTtsState(TtsState.Idle) call
-                                // finishTurnAndRestart() so we never race-reset isStreamingComplete
-                                // before the actual audio finishes playing.
-                                if (!settings.value.ttsEnabled) {
+                                // When TTS is disabled or TTS has already failed with an error, finish now.
+                                if (!settings.value.ttsEnabled || ttsEngine.state.value is TtsState.Error) {
                                     finishTurnAndRestart()
                                 }
                             }
@@ -694,8 +896,10 @@ class VoiceViewModel @Inject constructor(
                                     isStreamingComplete = false
                                     _uiState.update {
                                         it.copy(
-                                            voiceState   = VoiceState.IDLE,
-                                            errorMessage = userFacingError(event.cause.message ?: "")
+                                            voiceState     = VoiceState.IDLE,
+                                            userTranscript = "",
+                                            aiResponse     = "",
+                                            errorMessage   = userFacingError(event.cause.message ?: "")
                                         )
                                     }
                                 }
@@ -712,8 +916,10 @@ class VoiceViewModel @Inject constructor(
                     isStreamingComplete = false
                     _uiState.update {
                         it.copy(
-                            voiceState   = VoiceState.IDLE,
-                            errorMessage = userFacingError(e.message ?: "")
+                            voiceState     = VoiceState.IDLE,
+                            userTranscript = "",
+                            aiResponse     = "",
+                            errorMessage   = userFacingError(e.message ?: "")
                         )
                     }
                 }
@@ -724,8 +930,106 @@ class VoiceViewModel @Inject constructor(
     // ── Finish turn & restart ─────────────────────────────────────────────────
 
     private fun finishTurnAndRestart() {
+        val now = SystemClock.elapsedRealtime()
+        val sttDuration = if (sttFinalRealtime > turnStartRealtime && turnStartRealtime > 0L) sttFinalRealtime - turnStartRealtime else 0L
+        val baseline = if (sttFinalRealtime > 0L) sttFinalRealtime else turnStartRealtime
+        val ttft = if (firstTokenRealtime > baseline && baseline > 0L) firstTokenRealtime - baseline else 0L
+        val ttfa = if (firstAudioRealtime > baseline && baseline > 0L) {
+            firstAudioRealtime - baseline
+        } else 0L
+        val total = if (turnStartRealtime > 0L) {
+            now - turnStartRealtime
+        } else if (sttDuration > 0L || ttft > 0L) {
+            sttDuration + ttft
+        } else 0L
+
+        val activePipe = _uiState.value.activePipeline
+
+        val fullAiText = _uiState.value.aiResponse.trim()
+        val userText = _uiState.value.userTranscript.trim()
+
+        val isEstimated = (completionTokensCount == 0 && fullAiText.isNotEmpty()) || (promptTokensCount == 0 && userText.isNotEmpty())
+
+        val finalCompletionTokens = if (completionTokensCount > 0) {
+            completionTokensCount
+        } else if (fullAiText.isNotEmpty()) {
+            val words = fullAiText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+            (words * 1.33f).toInt().coerceAtLeast(1)
+        } else 0
+
+        val finalPromptTokens = if (promptTokensCount > 0) {
+            promptTokensCount
+        } else if (userText.isNotEmpty()) {
+            val promptWords = (userText + " " + settings.value.systemPrompt).split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+            (promptWords * 1.33f).toInt().coerceAtLeast(1)
+        } else 0
+
+        val metrics = TurnMetrics(
+            sttLatencyMs = sttDuration,
+            timeToFirstTokenMs = ttft,
+            timeToFirstAudioMs = ttfa,
+            totalTurnDurationMs = total,
+            bargeInLatencyMs = null, // Only real measured latencies; no fabricated 150ms constant
+            bargeInOccurred = bargeInFlag,
+            inputTokens = finalPromptTokens,
+            outputTokens = finalCompletionTokens,
+            isTokensEstimated = isEstimated,
+            estimatedCostUsd = 0.0
+        )
+
+        if (_uiState.value.userTranscript.isNotBlank() || _uiState.value.aiResponse.isNotBlank()) {
+            _uiState.update { it.copy(lastMetrics = metrics) }
+            val stt = activePipe?.sttProviderId ?: "deepgram"
+            val llm = activePipe?.llmModelId ?: "openai/gpt-oss-120b"
+            val tts = activePipe?.ttsProviderId ?: "cartesia"
+            val pipeName = activePipe?.name ?: "Active Pipeline"
+            val totalTokens = finalPromptTokens + finalCompletionTokens
+
+            viewModelScope.launch(dispatchers.io) {
+                // 1. Record complete hardware-encrypted local benchmark
+                turnBenchmarkRepository.recordBenchmark(
+                    TurnBenchmarkEntity(
+                        pipelineId = activePipe?.id ?: "default",
+                        pipelineName = pipeName,
+                        timestamp = System.currentTimeMillis(),
+                        sttLatencyMs = sttDuration,
+                        ttftMs = ttft,
+                        ttfaMs = ttfa,
+                        totalTurnMs = total,
+                        promptTokens = finalPromptTokens,
+                        completionTokens = finalCompletionTokens,
+                        totalTokens = totalTokens,
+                        estimatedCostUsd = 0.0,
+                        bargeInOccurred = bargeInFlag,
+                        userTranscriptionSnippet = userText.take(140),
+                        assistantResponseSnippet = fullAiText.take(140),
+                        isTokensEstimated = isEstimated,
+                        sttProvider = stt,
+                        llmModel = llm,
+                        ttsProvider = tts
+                    )
+                )
+
+                // 2. Anonymously record model usage & performance metrics in Firebase
+                // ZERO audio/transcripts sent; strictly maintains local privacy promise
+                firebaseAuthService.recordTurnTelemetry(
+                    sttProvider = stt,
+                    llmModel = llm,
+                    ttsProvider = tts,
+                    ttftMs = ttft,
+                    ttfaMs = ttfa,
+                    totalTurnMs = total,
+                    tokens = totalTokens,
+                    bargeInOccurred = bargeInFlag,
+                    pipelineName = pipeName
+                )
+            }
+        }
+
+        turnStartRealtime = 0L
         isStreamingComplete = false
-        _uiState.update { it.copy(voiceState = VoiceState.IDLE) }
+        bargeInFlag = false
+        _uiState.update { it.copy(voiceState = VoiceState.IDLE, userTranscript = "", aiResponse = "") }
         // Pre-connect now — socket will be ready in ~300 ms, well before the delay expires.
         sttEngine.preConnect()
         viewModelScope.launch {

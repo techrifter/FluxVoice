@@ -21,4 +21,7 @@ public sealed class StreamEvent {
 
     /** Transient or terminal error — includes the underlying cause. */
     public data class Error(val cause: Throwable) : StreamEvent()
+
+    /** Token usage report emitted by providers that report token accounting in SSE streams. */
+    public data class Usage(val promptTokens: Int, val completionTokens: Int) : StreamEvent()
 }

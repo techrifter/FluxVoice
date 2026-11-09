@@ -6,8 +6,10 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.techrifter.fluxvoice.data.local.datastore.SettingsDataStore
+import com.techrifter.fluxvoice.data.security.KeyVault
 import com.techrifter.fluxvoice.domain.stt.SttEngine
 import com.techrifter.fluxvoice.domain.stt.SttState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,6 +39,7 @@ import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val TAG = "WhisperSttEngine"
 private const val WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 private const val SAMPLE_RATE = 16_000
 private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
@@ -55,9 +58,10 @@ private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
  */
 @Singleton
 class WhisperSttEngine @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val httpClient: HttpClient,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val keyVault: KeyVault
 ) : SttEngine {
 
     private val _state = MutableStateFlow<SttState>(SttState.Idle)
@@ -137,7 +141,7 @@ class WhisperSttEngine @Inject constructor(
         }
 
         val pcmBytes = pcmOut.toByteArray()
-        if (pcmBytes.isEmpty()) {
+        if (pcmBytes.isEmpty() || pcmBytes.size < 320) {
             _state.value = SttState.Idle
             return
         }
@@ -148,9 +152,9 @@ class WhisperSttEngine @Inject constructor(
     // ── Transcription ─────────────────────────────────────────────────────────
 
     private suspend fun transcribe(wavBytes: ByteArray) {
-        val apiKey = settingsDataStore.settings.first().openAiApiKey
+        val apiKey = keyVault.getOpenAiKey().ifBlank { settingsDataStore.settings.first().openAiApiKey }
         if (apiKey.isBlank()) {
-            _state.value = SttState.Error("OpenAI API key not configured — set it in Settings")
+            _state.value = SttState.Error("OpenAI API key not configured: set it in Settings")
             return
         }
 
@@ -165,11 +169,8 @@ class WhisperSttEngine @Inject constructor(
                                 key = "file",
                                 value = wavBytes,
                                 headers = Headers.build {
-                                    append(
-                                        HttpHeaders.ContentDisposition,
-                                        "form-data; name=\"file\"; filename=\"audio.wav\""
-                                    )
                                     append(HttpHeaders.ContentType, "audio/wav")
+                                    append(HttpHeaders.ContentDisposition, "filename=\"audio.wav\"")
                                 }
                             )
                         }
@@ -178,8 +179,14 @@ class WhisperSttEngine @Inject constructor(
             }
 
             if (!response.status.isSuccess()) {
-                _state.value =
-                    SttState.Error("Whisper API error ${response.status.value}: ${response.status.description}")
+                val errorBody = response.bodyAsText()
+                val parsedMsg = try {
+                    Json.parseToJsonElement(errorBody).jsonObject["error"]
+                        ?.jsonObject?.get("message")?.jsonPrimitive?.content
+                } catch (_: Exception) { null }
+                val errorMsg = parsedMsg ?: "Whisper API error ${response.status.value}: ${response.status.description}"
+                Log.e(TAG, "Whisper API error ${response.status.value}: $errorBody")
+                _state.value = SttState.Error(errorMsg)
                 return
             }
 

@@ -19,6 +19,9 @@ sealed class StreamEvent {
     /** Stream completed cleanly */
     data object Done : StreamEvent()
 
+    /** Token usage telemetry for cost and throughput calculation */
+    data class Usage(val promptTokens: Int, val completionTokens: Int) : StreamEvent()
+
     /** Transient or terminal error — includes the underlying cause */
     data class Error(val cause: Throwable) : StreamEvent()
 }

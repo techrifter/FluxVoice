@@ -118,15 +118,24 @@ internal class FluxVoiceAudioCapture {
         }
 
         if (AcousticEchoCanceler.isAvailable()) {
-            aec = AcousticEchoCanceler.create(ar.audioSessionId)?.also { it.enabled = true }
+            aec = runCatching { AcousticEchoCanceler.create(ar.audioSessionId)?.also { it.enabled = true } }.getOrNull()
         }
         if (NoiseSuppressor.isAvailable()) {
-            ns = NoiseSuppressor.create(ar.audioSessionId)?.also { it.enabled = true }
+            ns = runCatching { NoiseSuppressor.create(ar.audioSessionId)?.also { it.enabled = true } }.getOrNull()
         }
 
         recorder    = ar
         isCapturing = true
-        ar.startRecording()
+        try {
+            ar.startRecording()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start AudioRecord: ${e.message}")
+            ar.release()
+            aec?.release()
+            ns?.release()
+            isCapturing = false
+            return
+        }
         Log.d(TAG, "Capture started (bufSize=$bufSize, aec=${aec != null}, ns=${ns != null})")
 
         captureJob = scope.launch {

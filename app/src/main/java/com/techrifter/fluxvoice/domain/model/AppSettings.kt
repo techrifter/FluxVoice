@@ -20,13 +20,15 @@ data class AppSettings(
     val geminiApiKey: String = "",
     val openAiApiKey: String = "",
     val groqApiKey: String = "",
-    val localLlmUrl: String = "http://localhost:11434",
-    val modelId: String = ProviderType.GEMINI.defaultModel,
+    val openRouterApiKey: String = "",
+    val localLlmUrl: String = "",
+    val modelId: String = "",
     val temperature: Float = 0.7f,
-    val systemPrompt: String = "You are a helpful voice assistant. Keep responses concise and conversational.",
+    val systemPrompt: String = PipelineConfig.DEFAULT_SYSTEM_PROMPT,
 
     // ── ElevenLabs ConvAI ─────────────────────────────────────────────────────
     val elevenLabsAgentId: String = "",
+    val elevenLabsApiKey: String = "",
 
     // ── Deepgram STT ──────────────────────────────────────────────────────────
     val deepgramApiKey: String = "",
@@ -36,13 +38,14 @@ data class AppSettings(
 
     // ── Text-to-Speech ────────────────────────────────────────────────────────
     val ttsEnabled: Boolean = true,
+    val ttsProvider: TtsProvider = TtsProvider.CARTESIA,
     val ttsSpeechRate: Float = 1.0f,
     val ttsPitch: Float = 1.0f,
 
     // ── Cartesia TTS ──────────────────────────────────────────────────────────
     /** Leave blank to use the built-in Android TTS as fallback. */
     val cartesiaApiKey: String = "",
-    val cartesiaVoiceId: String = "638efaaa-4d0c-442e-b701-3fae16aad012",
+    val cartesiaVoiceId: String = "",
 
     // ── Conversational UX ─────────────────────────────────────────────────────
     /** Auto barge-in: stop AI speech when mic detects user voice while TTS plays. */
@@ -57,5 +60,9 @@ data class AppSettings(
     val vadSensitivity: Int = 1_000,
     /** Speak a short acknowledgment ("Got it.", "Sure."…) immediately after STT. */
     val backchannelEnabled: Boolean = false,
-    val splashEnabled: Boolean = true
+    val splashEnabled: Boolean = true,
+
+    // ── Anonymous Identity & Telemetry ────────────────────────────────────────
+    val anonymousUsername: String = "",
+    val telemetryOptIn: Boolean = true
 )

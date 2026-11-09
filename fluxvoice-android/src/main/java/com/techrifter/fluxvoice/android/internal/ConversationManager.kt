@@ -16,8 +16,11 @@ internal class ConversationManager(private val maxTurns: Int = 10) {
 
     @Synchronized
     fun addUserMessage(text: String) {
-        history.addLast(Message(role = MessageRole.USER, content = text))
-        trimToLimit()
+        val last = history.lastOrNull()
+        if (last == null || last.role != MessageRole.USER || last.content != text) {
+            history.addLast(Message(role = MessageRole.USER, content = text))
+            trimToLimit()
+        }
     }
 
     @Synchronized

@@ -1,7 +1,7 @@
 package com.techrifter.fluxvoice.core.di
 
 import com.techrifter.fluxvoice.data.stt.SttEngineMux
-import com.techrifter.fluxvoice.data.tts.CartesiaTtsEngine
+import com.techrifter.fluxvoice.data.tts.TtsEngineMux
 import com.techrifter.fluxvoice.domain.stt.SttEngine
 import com.techrifter.fluxvoice.domain.tts.TtsEngine
 import dagger.Binds
@@ -32,11 +32,11 @@ abstract class VoiceModule {
     abstract fun bindSttEngine(impl: SttEngineMux): SttEngine
 
     /**
-     * Bind [CartesiaTtsEngine] as the active [TtsEngine].
-     * CartesiaTtsEngine delegates to [AndroidTtsEngine] automatically when
-     * no Cartesia API key is configured.
+     * Bind [TtsEngineMux] as the active [TtsEngine].
+     * TtsEngineMux dynamically delegates to Cartesia, ElevenLabs, OpenAI,
+     * Deepgram Aura, Android System, or Custom BYOK endpoints based on the active pipeline.
      */
     @Binds
     @Singleton
-    abstract fun bindTtsEngine(impl: CartesiaTtsEngine): TtsEngine
+    abstract fun bindTtsEngine(impl: TtsEngineMux): TtsEngine
 }

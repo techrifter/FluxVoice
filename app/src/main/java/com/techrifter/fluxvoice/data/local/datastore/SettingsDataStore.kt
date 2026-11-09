@@ -8,10 +8,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.techrifter.fluxvoice.data.security.KeyVault
 import com.techrifter.fluxvoice.domain.model.AppMode
 import com.techrifter.fluxvoice.domain.model.AppSettings
 import com.techrifter.fluxvoice.domain.model.ProviderType
 import com.techrifter.fluxvoice.domain.model.SttProvider
+import com.techrifter.fluxvoice.domain.model.TtsProvider
 import com.techrifter.fluxvoice.domain.model.VoiceMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -20,7 +22,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsDataStore @Inject constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val keyVault: KeyVault
 ) {
     companion object Keys {
         // ── App Mode ──────────────────────────────────────────────────────────
@@ -34,18 +37,21 @@ class SettingsDataStore @Inject constructor(
         val GEMINI_API_KEY        = stringPreferencesKey("gemini_api_key")
         val OPENAI_API_KEY        = stringPreferencesKey("openai_api_key")
         val GROQ_API_KEY          = stringPreferencesKey("groq_api_key")
+        val OPENROUTER_API_KEY    = stringPreferencesKey("openrouter_api_key")
         val LOCAL_LLM_URL         = stringPreferencesKey("local_llm_url")
         val MODEL_ID              = stringPreferencesKey("model_id")
         val TEMPERATURE           = floatPreferencesKey("temperature")
         val SYSTEM_PROMPT         = stringPreferencesKey("system_prompt")
         // ── ElevenLabs ────────────────────────────────────────────────────────
         val ELEVENLABS_AGENT_ID   = stringPreferencesKey("elevenlabs_agent_id")
+        val ELEVENLABS_API_KEY    = stringPreferencesKey("elevenlabs_api_key")
         // ── Deepgram ──────────────────────────────────────────────────────────
         val DEEPGRAM_API_KEY      = stringPreferencesKey("deepgram_api_key")
         // ── Voice Conversation ────────────────────────────────────────────────
         val MAX_CONTEXT_TURNS     = intPreferencesKey("max_context_turns")
         // ── Text-to-Speech ────────────────────────────────────────────────────
         val TTS_ENABLED           = booleanPreferencesKey("tts_enabled")
+        val TTS_PROVIDER          = stringPreferencesKey("tts_provider")
         val TTS_SPEECH_RATE       = floatPreferencesKey("tts_speech_rate")
         val TTS_PITCH             = floatPreferencesKey("tts_pitch")
         // ── Cartesia TTS ──────────────────────────────────────────────────────
@@ -56,6 +62,8 @@ class SettingsDataStore @Inject constructor(
         val VAD_SENSITIVITY       = intPreferencesKey("vad_sensitivity")
         val BACKCHANNEL_ENABLED   = booleanPreferencesKey("backchannel_enabled")
         val SPLASH_ENABLED        = booleanPreferencesKey("splash_enabled")
+        val ANONYMOUS_USERNAME    = stringPreferencesKey("anonymous_username")
+        val TELEMETRY_OPT_IN      = booleanPreferencesKey("telemetry_opt_in")
     }
 
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
@@ -72,29 +80,37 @@ class SettingsDataStore @Inject constructor(
         val sttProviderName = prefs[STT_PROVIDER] ?: SttProvider.DEEPGRAM.name
         val sttProvider   = SttProvider.entries.firstOrNull { it.name == sttProviderName }
             ?: SttProvider.DEEPGRAM
+        val ttsProviderName = prefs[TTS_PROVIDER] ?: TtsProvider.CARTESIA.name
+        val ttsProvider   = TtsProvider.entries.firstOrNull { it.name.equals(ttsProviderName, ignoreCase = true) || it.id.equals(ttsProviderName, ignoreCase = true) }
+            ?: TtsProvider.CARTESIA
         AppSettings(
             appMode           = appMode,
             voiceMode         = voiceMode,
             sttProvider       = sttProvider,
             providerType      = providerType,
-            geminiApiKey      = prefs[GEMINI_API_KEY]      ?: "",
-            openAiApiKey      = prefs[OPENAI_API_KEY]      ?: "",
-            groqApiKey        = prefs[GROQ_API_KEY]        ?: "",
-            localLlmUrl       = prefs[LOCAL_LLM_URL]       ?: "http://localhost:11434",
-            modelId           = prefs[MODEL_ID]            ?: providerType.defaultModel,
+            geminiApiKey      = keyVault.getGeminiKey(),
+            openAiApiKey      = keyVault.getOpenAiKey(),
+            groqApiKey        = keyVault.getGroqKey(),
+            openRouterApiKey  = keyVault.getOpenRouterKey(),
+            localLlmUrl       = prefs[LOCAL_LLM_URL]       ?: "",
+            modelId           = prefs[MODEL_ID]            ?: "",
             temperature       = (prefs[TEMPERATURE] ?: 0.7f).coerceIn(0f, 1f),
-            systemPrompt      = prefs[SYSTEM_PROMPT]       ?: "You are a helpful voice assistant. Keep responses concise and conversational.",
+            systemPrompt      = prefs[SYSTEM_PROMPT]       ?: com.techrifter.fluxvoice.domain.model.PipelineConfig.DEFAULT_SYSTEM_PROMPT,
             elevenLabsAgentId = elevenLabsAgentId,
-            deepgramApiKey    = prefs[DEEPGRAM_API_KEY]    ?: "",
+            elevenLabsApiKey  = keyVault.getElevenLabsKey(),
+            deepgramApiKey    = keyVault.getDeepgramKey(),
             maxContextTurns   = prefs[MAX_CONTEXT_TURNS]   ?: 10,
             ttsEnabled        = prefs[TTS_ENABLED]         ?: true,
+            ttsProvider       = ttsProvider,
             ttsSpeechRate     = prefs[TTS_SPEECH_RATE]     ?: 1.0f,
             ttsPitch          = prefs[TTS_PITCH]           ?: 1.0f,
-            cartesiaApiKey    = prefs[CARTESIA_API_KEY]    ?: "",
-            cartesiaVoiceId   = prefs[CARTESIA_VOICE_ID]   ?: "638efaaa-4d0c-442e-b701-3fae16aad012",
+            cartesiaApiKey    = keyVault.getCartesiaKey(),
+            cartesiaVoiceId   = prefs[CARTESIA_VOICE_ID]   ?: "",
             vadEnabled        = prefs[VAD_ENABLED]         ?: true,
             vadSensitivity    = prefs[VAD_SENSITIVITY]     ?: 1_000,
-            backchannelEnabled = prefs[BACKCHANNEL_ENABLED] ?: false
+            backchannelEnabled = prefs[BACKCHANNEL_ENABLED] ?: false,
+            anonymousUsername = prefs[ANONYMOUS_USERNAME] ?: "",
+            telemetryOptIn    = prefs[TELEMETRY_OPT_IN]     ?: true
         )
     }
 
