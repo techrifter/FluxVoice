@@ -12,13 +12,11 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve line number information for Play Console crash deobfuscation
+-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Hide original source file names in stack traces
+-renamesourcefileattribute SourceFile
 
 # ── ElevenLabs ConvAI SDK ──────────────────────────────────────────────────────
 -keep class io.elevenlabs.** { *; }
@@ -43,6 +41,9 @@
 # ── Room & Persistence ────────────────────────────────────────────────────────
 -keep class androidx.room.** { *; }
 -keep class com.techrifter.fluxvoice.data.local.db.** { *; }
+
+# ── WebRTC VAD (Native JNI) ──────────────────────────────────────────────────
+-keep class com.konovalov.vad.** { *; }
 
 # ── Domain & Telemetry Models ─────────────────────────────────────────────────
 -keep class com.techrifter.fluxvoice.domain.model.** { *; }
