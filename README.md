@@ -1,18 +1,18 @@
 <h1 align="center">FluxVoice</h1>
 
 <p align="center">
-  <b>Real-Time Conversational Voice AI Engine & Interactive Workbench for Android</b>
+  <b>The Ultra-Low-Latency Voice AI SDK & Interactive Visual Playground for Android</b>
 </p>
 
 <p align="center">
-  Streaming STT → LLM → TTS pipeline with sub-500ms turnaround, hardware-accelerated barge-in, and sentence-level voice orchestration.
+  Sub-second voice turnaround (~560ms TTFA) • Streaming STT → LLM → TTS sentence pipelining • Hardware-accelerated auto barge-in • Universal BYOK • Production Jetpack Compose SDK & Headless Engine
 </p>
 
 <p align="center">
   <a href="https://central.sonatype.com/search?q=com.techrifter.fluxvoice">
     <img src="https://img.shields.io/maven-central/v/com.techrifter.fluxvoice/fluxvoice-core?color=blue" alt="Maven Central"/>
   </a>
-  <a href="LICENSE">
+  <a href="LICENSE.md">
     <img src="https://img.shields.io/badge/license-Apache%202.0-2563eb" alt="License"/>
   </a>
   <img src="https://img.shields.io/badge/API-24%2B-22c55e" alt="API 24+"/>
@@ -25,71 +25,162 @@
 <table align="center">
 <tr>
 <td align="center" valign="middle">
-<img src="app/assets/FluxVoice.webp" width="240" alt="FluxVoice logo"/>
+<img src="app/assets/FluxVoice.webp" width="230" alt="FluxVoice Logo"/>
+<br/>
+<sub><b>FluxVoice Ecosystem</b></sub>
 </td>
-<td width="40"></td>
+<td width="30"></td>
 <td align="center" valign="middle">
-<img src="app/assets/FluxVoice_Demo.webp" width="260" alt="FluxVoice realtime demo"/>
+<img src="app/assets/FluxVoice_Demo.webp" width="250" alt="FluxVoice Realtime Voice Demo"/>
+<br/>
+<sub><b>Voice AI Studio</b></sub>
 </td>
 </tr>
 </table>
 
 <p align="center">
-  <sub>Natural human cadence • Speak & interrupt anytime • Real-time sentence streaming • Universal BYOK</sub>
+  <sub>Natural human cadence • Instant interrupt (barge-in) • Sub-second voice synthesis • Multi-stack studio workbench</sub>
 </p>
 
 ---
 
-## What is FluxVoice?
+## ⚡ What is FluxVoice?
 
-Building a voice AI conversation system on Android from scratch requires complex audio engineering: handling raw PCM microphone capture, hardware acoustic echo cancellation, streaming token parsing, live speech synthesis, and real-time interruption handling (barge-in).
+Building natural, human-speed conversational AI on Android has traditionally been an engineering nightmare:
 
-**FluxVoice solves this entirely.**
+- Raw 16-bit PCM microphone capture and hardware audio routing
+- Acoustic echo feedback loops between device speakers and microphone
+- Sluggish turn-taking where the user waits seconds for an LLM to generate its complete answer before audio starts
+- Fragile interruption handling when the user speaks while the assistant is speaking
+- Complex vendor lock-in across incompatible speech APIs
 
-FluxVoice is an end-to-end voice AI ecosystem consisting of two complementary parts:
+**FluxVoice eliminates these complexities completely.**
 
-1. **The FluxVoice SDK**: Six modular, lightweight Android libraries published on Maven Central. Drop in a ready-to-use voice screen in ~10 lines of Compose, embed an interactive orb widget, or use the headless engine with your own UI.
-2. **The FluxVoice Playground & Workbench Android App**: A production-grade mobile workbench published on Google Play. It lets you test speech models, inspect millisecond-level telemetry, configure custom pipelines, and export clean, production-ready Kotlin SDK code with one tap.
+FluxVoice is a complete, two-part Voice AI ecosystem designed specifically for the Android platform:
+
+1. **The FluxVoice SDK (Maven Central)**: Six modular, lightweight Kotlin libraries. Drop a complete conversational voice screen into your app in ~10 lines of Jetpack Compose, or use the headless engine with your own custom architecture.
+2. **The FluxVoice Playground & Architecture Studio (`/app`)**: An interactive Android workbench to benchmark speech and language models in real-time, inspect millisecond-level telemetry (STT, TTFT, TTFA, Total Latency), configure and persist multiple custom voice stacks, and **export production-ready Kotlin SDK code with one tap**.
 
 ```
-       ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-Mic ──►│ Streaming STT├────►│Streaming LLM ├────►│Streaming TTS ├──► Speaker
-       └──────┬───────┘     └──────────────┘     └──────┬───────┘
-              ▲                                         │
-              │             WebRTC VAD                  │
-              └───────── Auto Barge-In (AEC) ───────────┘
+                           FLUXVOICE STREAMING ARCHITECTURE
+                     
+ ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+ │  Streaming STT  │──────►│  Streaming LLM  │──────►│  Streaming TTS  │
+ │ (Deepgram /     │       │ (Groq / Gemini /│       │ (Cartesia Sonic/│
+ │  Whisper / BYOK)│       │  OpenAI / BYOK) │       │  Eleven / BYOK) │
+ └────────┬────────┘       └────────┬────────┘       └────────┬────────┘
+          ▲                         │                         │
+          │             Sentence Extractor (Punctuation)      │
+          │             Dispatches audio as tokens stream     ▼
+     [Microphone]                                         [Speaker]
+          ▲                                                   │
+          │                   Google WebRTC VAD               │
+          └────────── Hardware Acoustic Echo Canceler ────────┘
+                      Instant Auto Barge-In (< 50ms)
 ```
 
 ---
 
-## Core Features
+## 🏆 Real-World Benchmarks & Telemetry
 
-- ⚡ **Sub-500ms Conversational Turnaround**: Speech is synthesized sentence-by-sentence *as the LLM streams*. Audio starts playing before the language model finishes generating its full response.
-- 🎙️ **Hardware-Accelerated Auto Barge-In**: WebRTC Voice Activity Detection (VAD) coupled with Android hardware Acoustic Echo Cancellation (AEC). When you speak over the assistant, playback stops immediately and speech recognition re-opens with zero audio feedback.
-- 🧩 **Universal BYOK (Bring Your Own Key & Endpoints)**:
-  - **Speech-to-Text (STT)**: Deepgram Nova-3, Groq Whisper Turbo, OpenAI Whisper, or any custom OpenAI-compatible `/v1/audio/transcriptions` server (Together AI, LocalAI, FastWhisper, Whisper.cpp).
-  - **Language Models (LLM)**: Groq LPUs (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`), Google Gemini 2.5 Flash, OpenAI `gpt-4o-mini`, OpenRouter universal directory, or any OpenAI-compatible `/v1/chat/completions` server.
-  - **Voice Synthesis (TTS)**: Cartesia Sonic 3.6, ElevenLabs Neural, Deepgram Aura, OpenAI Speech, Custom `/v1/audio/speech`, or 100% offline on-device Android TTS.
-  - **All-in-One Voice Agents**: Full-duplex ElevenLabs Conversational AI WebSocket integration with server-side turn-taking and speech synthesis.
-- 🛠️ **Visual Pipeline Studio & 1-Click Code Export**: Design and test custom pipelines in the app, verify live model latencies, and export copy-pasteable Kotlin Compose SDK code for your projects.
-- 📊 **Real-Time Telemetry HUD & Turn Benchmarks**: Live tracking of STT latency, Time-to-First-Token (TTFT), Time-to-First-Audio (TTFA), and total roundtrip duration. Every turn record includes color-coded stack badges (`STT`, `LLM`, `TTS`) and barge-in indicators.
-- 🔐 **Privacy-First Hardware Key Vault**: Commercial API keys are encrypted directly on-device via Android Keystore (AES-256 GCM) with zero plaintext disk storage. Google Gemini calls use secure `x-goog-api-key` header transport rather than URL query parameters.
-- 📈 **Scalable, Partitioned Telemetry**: Anonymous usage metrics partitioned across dedicated Firestore collections (`anonymous_users`, `user_model_stats`, `model_telemetry`, `latency_telemetry`) with zero transcript data collected.
+Every conversation turn is automatically benchmarked on-device by the FluxVoice engine. The built-in **Turn Benchmarks HUD** logs exact millisecond telemetry across different voice stacks:
+
+| Run                              | Stack Architecture                                             | Time-to-First-Token (TTFT) | Time-to-First-Audio (TTFA) | Tokens Generated | Key Behavior                                                                       |
+| -------------------------------- | -------------------------------------------------------------- | -------------------------- | -------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
+| **01 (Ultra-Fast Cloud)**  | Deepgram Nova-3 + Groq GPT-OSS-120B + Cartesia Sonic 3.6       | **564 ms**           | **565 ms**           | ~46 tokens       | **Instant playback**: Audio starts 1 ms after first token arrival            |
+| **02 (Custom + Barge-In)** | OpenAI Whisper + Groq GPT-OSS-120B + Android System TTS        | **692 ms**           | **693 ms**           | ~58 tokens       | **Sub-700ms on-device TTS**: Instant acoustic barge-in interruption verified |
+| **03 (Deep Reasoning)**    | Deepgram Nova-3 + Google Gemini 2.5 Flash + Cartesia Sonic 3.6 | **3700 ms**          | **1540 ms**          | 125 tokens       | **Complex reasoning**: First-principles multi-sentence spoken response       |
+
+### Why TTFA Matches TTFT (Sub-1ms Audio Dispatch)
+
+Notice how in Run 01 and Run 02, **TTFA begins within 1 ms of TTFT** (565 ms vs 564 ms, and 693 ms vs 692 ms).
+Traditional architectures force the user to wait until the LLM completes its entire generation before audio synthesis begins. FluxVoice's sentence-level pipelining synthesizes and streams the first chunk immediately, delivering human-speed conversational responsiveness on Android.
 
 ---
 
-## Which Module Do I Need?
+## 📱 Visual Tour: Playground Studio & Modes
 
-FluxVoice is modular. Add only the dependencies your application needs:
+<table align="center">
+  <tr>
+    <td align="center"><b>Fast Mode (Instant Responses)</b></td>
+    <td align="center"><b>Thinking Mode (Deep Reasoning)</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="app/assets/FastMode.webp" width="250" alt="Fast Mode"/></td>
+    <td align="center"><img src="app/assets/ThinkingMode.webp" width="250" alt="Thinking Mode"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Low-latency, punchy answers for voice commands</sub></td>
+    <td align="center"><sub>Flowing, structured spoken reasoning for architecture</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Pipeline Studio (Multi-Stack Architecture)</b></td>
+    <td align="center"><b>Hardware KeyVault & Settings</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="app/assets/CustomMode.webp" width="250" alt="Pipeline Studio"/></td>
+    <td align="center"><img src="app/assets/CustomSettings.webp" width="250" alt="KeyVault Settings"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Create, customize, compare & export multiple voice stacks</sub></td>
+    <td align="center"><sub>Hardware-backed AES-256 GCM credentials in Keystore</sub></td>
+  </tr>
+</table>
 
-| I want to… | Module | What you write |
-|---|---|---|
-| Drop a complete, animated voice screen into my app | `fluxvoice-compose` | ~10 lines of Compose |
-| Build my own custom UI, just need the voice pipeline | `fluxvoice-android` | Your own View or Compose UI |
-| Use the core interfaces and build custom engines | `fluxvoice-core` | Your own engine & UI |
-| Stream live speech recognition via WebSocket | `fluxvoice-stt-deepgram` | Pass your API key |
-| Stream chat completions (Groq, OpenAI, Gemini, etc.) | `fluxvoice-provider-llm` | Pass key and model ID |
-| Stream ultra-low latency voice synthesis | `fluxvoice-tts-cartesia` | Pass key and voice ID |
+---
+
+## 🚀 Key Capabilities
+
+### 1. ⚡ Sentence-Level Voice Orchestration
+
+FluxVoice streams LLM tokens through a `SentenceExtractor` boundary scanner. As soon as a complete sentence forms, it is instantly dispatched to the TTS synthesizer. The assistant begins speaking while subsequent sentences are still generating, achieving sub-second first-audio turnaround (~565 ms measured on device).
+
+### 2. 🎙️ Hardware-Accelerated Auto Barge-In
+
+Speak naturally at any time - just like talking to a human. Device hardware **Acoustic Echo Cancellation (AEC)** prevents speaker audio from leaking into the microphone, while continuous **Google WebRTC Voice Activity Detection (VAD)** senses user voice energy. When you interrupt:
+
+- Playback stops in < 50ms
+- In-flight LLM streaming job is cleanly cancelled
+- Echo-decay window absorbs lingering room reflection
+- STT mic re-arms immediately
+
+### 3. 🛠️ Visual Pipeline Studio & 1-Click Kotlin SDK Export
+
+The companion Android app is an interactive workbench for AI voice architects:
+
+- **Multiple Custom Voice Stacks**: Create, name, tweak, and persist unlimited custom pipeline configurations alongside presets.
+- **Side-by-Side Comparison**: Switch between Deepgram Nova-3, Groq Whisper, OpenAI Whisper, Groq LPUs, Gemini 2.5 Flash, OpenRouter, Cartesia Sonic, ElevenLabs, and on-device Android TTS.
+- **1-Click Kotlin Export**: Tap "Export Code" in any stack to copy-paste production-ready Kotlin Compose SDK code directly into your app.
+
+### 4. 📊 Real-Time Telemetry HUD & Turn Benchmarks
+
+Track exact millisecond metrics for every single conversation turn:
+
+- **STT Latency**: Speech end to transcript finalization
+- **TTFT**: Time-to-First-Token from LLM
+- **TTFA**: Time-to-First-Audio playback
+- **Total Turn Duration**: End-to-end conversational roundtrip
+- **Token Usage**: Accurate input/output token accounting.
+- **Barge-in Indicator**: Tracks whether and when interruption occurred
+
+### 5. 🔐 Privacy-First Hardware Security (KeyVault)
+
+All commercial API keys entered in the workbench are encrypted directly on-device with **AES-256 GCM** keys stored in the **Android Keystore hardware security module**. Zero plaintext storage on disk. Zero audio or transcript recording to remote servers.
+
+---
+
+## 🧩 Which Module Do I Need?
+
+FluxVoice is published as six modular, lightweight Android libraries on Maven Central:
+
+| Module                     | What it provides                                                                                                                                                                           | What you write                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `fluxvoice-compose`      | Complete animated voice UI (`FluxVoiceScreen`), reactive visualizer (`FluxVoiceView`), Material You dynamic theme (`FluxVoiceTheme`), and Compose lifecycle hook (`rememberFluxVoice`) | ~10 lines of Jetpack Compose             |
+| `fluxvoice-android`      | `FluxVoiceEngine`, hardware audio capture with AEC, WebRTC VAD, sliding-window conversation memory, sentence streaming                                                                   | Driven by `StateFlow` in ViewModels    |
+| `fluxvoice-core`         | Core interfaces (`SttProvider`, `LlmProvider`, `TtsProvider`), models (`TurnMetrics`, `GenerationConfig`, `StreamEvent`), and config DSL (`FluxVoiceConfig`)                 | Pure Kotlin (no Android UI dependencies) |
+| `fluxvoice-stt-deepgram` | Deepgram Nova-3 streaming speech-to-text with WebSocket pre-warming (`preConnect`) and automatic reconnect                                                                               | Pass your Deepgram API key               |
+| `fluxvoice-provider-llm` | Universal OpenAI-compatible SSE chat completions engine (Groq, Gemini, OpenAI, OpenRouter, Together AI, Ollama, vLLM)                                                                      | Pass API key and model ID                |
+| `fluxvoice-tts-cartesia` | Cartesia Sonic 3.6 real-time streaming voice synthesis with sub-200ms audio output and live pitch/rate controls                                                                            | Pass key and voice ID                    |
 
 ### Dependency Graph
 
@@ -99,42 +190,23 @@ fluxvoice-compose ──► fluxvoice-android ──► fluxvoice-core ◄──
                                                            ◄── fluxvoice-tts-cartesia
 ```
 
-Adding `fluxvoice-compose` transitively includes `fluxvoice-android` and `fluxvoice-core`. Provider modules depend only on `fluxvoice-core` and can be mixed and matched freely.
+Adding `fluxvoice-compose` automatically brings in `fluxvoice-android` and `fluxvoice-core`.
 
 ---
 
-## Free Tiers & Supported Services
+## 📦 Quickstart
 
-FluxVoice connects directly to official AI provider APIs. You can start testing in minutes using free developer tiers:
+Add a complete, animated conversational voice screen to your Android app in 3 simple steps:
 
-| Provider | Service | Default Model / Target | Free Tier & Availability |
-|---|---|---|---|
-| **Deepgram** | Speech-to-Text & Text-to-Speech | `nova-3`, `aura-asteria-en` | \$200 free credit (~45,000 mins STT / Aura TTS) |
-| **Groq Cloud** | LLM & STT | `openai/gpt-oss-120b`, `whisper-large-v3-turbo` | Free API key on ultra-fast Groq LPUs |
-| **Google Gemini** | Language Model | `gemini-2.5-flash` | Free tier via Google AI Studio |
-| **OpenAI** | STT, LLM, TTS | `whisper-1`, `gpt-4o-mini`, `tts-1` | Standard pay-as-you-go / developer credits |
-| **OpenRouter** | Multi-Model LLM Gateway | 300+ models (Llama 3.3, DeepSeek, Claude, etc.) | Free and low-cost models via unified API |
-| **Cartesia** | Text-to-Speech | `sonic-3.6` | Free starter tier (~20k characters) |
-| **ElevenLabs** | All-in-One Voice Agent & TTS | Conversational Agent, `eleven_flash_v2_5` | Free starter credits |
-| **Local / Ollama** | Language Model | `http://localhost:11434` (e.g. `llama3.2`) | 100% free, offline, private on your local network |
-| **Android System** | Text-to-Speech | Device default voice | 100% free, offline, zero API keys required |
-| **Custom BYOK** | STT, LLM, TTS | Any OpenAI-compatible endpoint | Self-hosted (vLLM, LocalAI, Whisper.cpp) or cloud |
-
----
-
-## Quickstart
-
-Add a fully animated voice conversation screen to your Android app in 3 steps:
-
-### 1. Add Dependencies
+### 1. Add Repositories & Dependencies
 
 ```kotlin
-// settings.gradle.kts - add JitPack (required for WebRTC VAD)
+// settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://jitpack.io") }
+        maven { url = uri("https://jitpack.io") } // Required for WebRTC VAD
     }
 }
 ```
@@ -142,10 +214,16 @@ dependencyResolutionManagement {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
+    // Complete Compose UI + Engine
     implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
+
+    // Speech & Language Providers
     implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
     implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
     implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
+
+    // Compose lifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
 }
 ```
 
@@ -157,7 +235,7 @@ dependencies {
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
 ```
 
-`RECORD_AUDIO` runtime permission is requested automatically when the user taps to speak.
+> **Note**: `RECORD_AUDIO` runtime permission is requested automatically when the user taps the visualizer.
 
 ### 3. Display the Voice Screen
 
@@ -167,22 +245,27 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                VoiceAssistantScreen()
+            FluxVoiceTheme {
+                VoiceScreen()
             }
         }
     }
 }
 
 @Composable
-fun VoiceAssistantScreen() {
+fun VoiceScreen() {
     var mode by remember { mutableStateOf(FluxVoiceMode.FAST) }
 
     val controller = rememberFluxVoice(mode) {
         systemPrompt = mode.defaultPrompt
-        stt = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
-        llm = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
-        tts = CartesiaTtsProvider(apiKey = "YOUR_CARTESIA_KEY")
+        stt = DeepgramSttProvider(apiKey = BuildConfig.DEEPGRAM_KEY)
+        llm = OpenAiCompatibleLlmProvider(apiKey = BuildConfig.GROQ_KEY)
+        tts = CartesiaTtsProvider(apiKey = BuildConfig.CARTESIA_KEY)
+
+        // Real-time telemetry callback
+        onTurnMetrics { metrics ->
+            Log.d("Voice", "TTFT: ${metrics.timeToFirstTokenMs}ms | TTFA: ${metrics.timeToFirstAudioMs}ms")
+        }
     }
 
     FluxVoiceScreen(
@@ -193,156 +276,52 @@ fun VoiceAssistantScreen() {
 }
 ```
 
-You now have a complete voice screen with an animated living orb, real-time waveform reactions, live transcript bubbles, mode selection, and barge-in handling.
+You now have a production-ready voice conversation screen with a fluid sound-wave visualizer, live transcript bubbles, mode switching, automatic barge-in, and error handling.
 
 ---
 
-## Modes
+## 🎨 Three Ways to Integrate
 
-FluxVoice includes three built-in conversation modes with specialized system personas:
+### Option A: Full-Screen Out of the Box (`FluxVoiceScreen`)
 
-| Mode | Badge | Prompt Behavior | Best For |
-|---|---|---|---|
-| `FluxVoiceMode.FAST` | ⚡ Fast | Short, direct answers without preamble | Instant queries, voice commands, rapid Q&A |
-| `FluxVoiceMode.THINKING` | 🧠 Thinking | Structured, reasoned explanations | Complex problem solving, brainstorming |
-| `FluxVoiceMode.CUSTOM` | ✨ Custom | Fully configurable custom persona | Domain assistants, customer support |
-
-> [!NOTE]
-> In **Custom Mode**, you can select between two voice architectures:
-> - **Standard Modular Pipeline**: Mix and match any STT provider (Deepgram, Groq Whisper, OpenAI Whisper, Custom), any LLM (Groq LPUs, Gemini, OpenAI, OpenRouter, Local Ollama), and any TTS engine (Cartesia, Deepgram Aura, ElevenLabs, OpenAI, Android TTS).
-> - **ElevenLabs ConvAI (All-in-One Voice Agent)**: Connects directly to an ElevenLabs Conversational AI Agent over full-duplex WebSocket, handling speech-to-text, LLM intelligence, and low-latency voice synthesis in a single end-to-end stream.
-
-<table align="center">
-  <tr>
-    <td align="center"><b>Fast Mode (Low Latency)</b></td>
-    <td align="center"><b>Thinking Mode (Reasoning)</b></td>
-  </tr>
-  <tr>
-    <td><img src="app/assets/FastMode.webp" width="240" alt="Fast Mode"/></td>
-    <td><img src="app/assets/ThinkingMode.webp" width="240" alt="Thinking Mode"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Pipeline Studio</b></td>
-    <td align="center"><b>Key Vault & Settings</b></td>
-  </tr>
-  <tr>
-    <td><img src="app/assets/CustomMode.webp" width="240" alt="Custom Mode"/></td>
-    <td><img src="app/assets/CustomSettings.webp" width="240" alt="Settings Screen"/></td>
-  </tr>
-</table>
-
----
-
-## Configuration
-
-Customize pipeline parameters inside the `rememberFluxVoice { }` block (or `FluxVoiceConfig { }` for non-Compose engines):
+The quickest way to add voice. Provides complete UI, mode badges, live speech bubbles, settings navigation, and animated state transitions.
 
 ```kotlin
-val controller = rememberFluxVoice(mode) {
-    // ── Engine Providers ───────────────────────────────────────────────────
-    stt = DeepgramSttProvider(
-        apiKey = BuildConfig.DEEPGRAM_KEY,
-        model = "nova-3",
-        endpointingMs = 400
-    )
-    llm = OpenAiCompatibleLlmProvider(
-        apiKey = BuildConfig.GROQ_KEY,
-        modelId = "openai/gpt-oss-120b"
-    )
-    tts = CartesiaTtsProvider(
-        apiKey = BuildConfig.CARTESIA_KEY,
-        voiceId = CARTESIA_VOICE,
-        speechRate = 1.0f
-    )
-
-    // ── Pipeline Dynamics ──────────────────────────────────────────────────
-    systemPrompt       = "You are a concise voice assistant. Respond conversationally."
-    temperature        = 0.7f
-    maxOutputTokens    = 1024
-    maxContextTurns    = 8
-    vadEnabled         = true          // Enable acoustic barge-in
-    vadSensitivity     = 850           // 200–3000 (lower = more sensitive)
-    backchannelEnabled = true          // Play filler word during slow queries
-    backchannelDelayMs = 1500L
-
-    // ── Lifecycle Callbacks ────────────────────────────────────────────────
-    onTranscript  { text -> Log.d("Voice", "User: $text") }
-    onResponse    { text -> Log.d("Voice", "Assistant: $text") }
-    onError       { error -> Log.e("Voice", "Pipeline error: ${error.message}") }
-    onStateChange { from, to -> Log.d("Voice", "State: $from -> $to") }
-    onTurnMetrics { metrics ->
-        Log.d("Voice", "TTFT: ${metrics.timeToFirstTokenMs}ms, TTFA: ${metrics.timeToFirstAudioMs}ms")
-    }
-}
+FluxVoiceScreen(
+    controller      = controller,
+    initialMode     = FluxVoiceMode.FAST,
+    onModeChange    = { mode -> /* handle mode change */ },
+    onSettingsClick = { navController.navigate("settings") }
+)
 ```
 
-### Configuration Options
+### Option B: Embedded Interactive Widget (`FluxVoiceView`)
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `stt` / `sttProvider` | `SttProvider?` | `null` | Speech recognition provider instance |
-| `llm` / `llmProvider` | `LlmProvider?` | `null` | Language model provider instance |
-| `tts` / `ttsProvider` | `TtsProvider?` | `null` | Speech synthesis provider. Omit for text-only callback mode |
-| `systemPrompt` | `String` | `"You are a helpful voice assistant..."` | Persona message prepended to the conversation |
-| `temperature` | `Float` | `0.7f` | LLM creativity (0.0 to 1.5) |
-| `maxOutputTokens` | `Int` | `2048` | Maximum generation length per turn |
-| `maxContextTurns` | `Int` | `10` | Conversation memory window. Oldest turns slide out when full |
-| `vadEnabled` | `Boolean` | `true` | Enables auto barge-in when user speaks over assistant audio |
-| `vadSensitivity` | `Int` | `1000` | Voice detection threshold (200–3000) |
-| `backchannelEnabled` | `Boolean` | `false` | Speaks natural verbal filler ("Got it.", "Sure.") if model warms up slowly |
-| `backchannelDelayMs` | `Long` | `1500L` | Wait time before backchannel acknowledgment plays |
-
----
-
-## Embedded Widget — `FluxVoiceView`
-
-When you want to embed the voice orb inside an existing screen rather than replacing the full activity layout, use `FluxVoiceView`:
+Embed the reactive voice visualizer into your own screen layout (e.g. search bars, customer checkout, in-car dashboard).
 
 ```kotlin
-@Composable
-fun ProductSearchScreen() {
-    val controller = rememberFluxVoice {
-        stt = DeepgramSttProvider(apiKey = BuildConfig.DEEPGRAM_KEY)
-        llm = OpenAiCompatibleLlmProvider(apiKey = BuildConfig.GROQ_KEY)
-        tts = CartesiaTtsProvider(apiKey = BuildConfig.CARTESIA_KEY)
-    }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Your custom search UI
-        CustomSearchBar()
-
-        Spacer(Modifier.weight(1f))
-
-        // Embed the voice orb widget
-        FluxVoiceView(
-            controller = controller,
-            config = FluxVoiceViewConfig(
-                size = 220.dp,
-                showTranscript = true,
-                showBrandName = false,
-                showStateLabel = true,
-                showHintLabel = true,
-                colors = FluxVoiceColors(
-                    idle = Color(0xFF64748B),
-                    listening = Color(0xFF38BDF8),
-                    thinking = Color(0xFFA855F7),
-                    speaking = Color(0xFF34D399),
-                    interrupting = Color(0xFFF43F5E)
-                )
-            )
+FluxVoiceView(
+    controller = controller,
+    config = FluxVoiceViewConfig(
+        size           = 220.dp,
+        showTranscript = true,
+        showBrandName  = false,
+        colors = FluxVoiceColors(
+            idle         = Color(0xFF64748B),
+            listening    = Color(0xFF38BDF8),
+            thinking     = Color(0xFFA855F7),
+            speaking     = Color(0xFF34D399),
+            interrupting = Color(0xFFF43F5E)
         )
-    }
-}
+    )
+)
 ```
 
----
+### Option C: Headless Architecture (Custom UI / ViewModels)
 
-## Headless Architecture
-
-Use `fluxvoice-android` without Compose to drive your own native views or custom architecture directly from `StateFlow`:
+Use `fluxvoice-android` without any UI dependencies to drive your own custom designs from reactive `StateFlow`:
 
 ```kotlin
-// ViewModel
 class VoiceViewModel(application: Application) : AndroidViewModel(application) {
 
     val controller = FluxVoiceEngine(
@@ -350,7 +329,7 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
             stt = DeepgramSttProvider(BuildConfig.DEEPGRAM_KEY)
             llm = OpenAiCompatibleLlmProvider(BuildConfig.GROQ_KEY)
             tts = CartesiaTtsProvider(BuildConfig.CARTESIA_KEY)
-            systemPrompt = "You are a concise voice assistant."
+            systemPrompt = "You are Flux, an ultra-fast voice AI assistant. Speak with clarity and natural rhythm, delivering concise, high-signal spoken answers."
         },
         scope = viewModelScope
     )
@@ -358,92 +337,83 @@ class VoiceViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() = controller.destroy()
 }
 
-// In your custom UI
 @Composable
-fun CustomVoiceScreen(viewModel: VoiceViewModel = viewModel()) {
+fun CustomScreen(viewModel: VoiceViewModel = viewModel()) {
     val state by viewModel.controller.state.collectAsStateWithLifecycle()
 
     when (state.voiceState) {
-        VoiceState.IDLE         -> IdleButton { viewModel.controller.tap() }
-        VoiceState.LISTENING    -> ListeningView(transcript = state.partialTranscript)
-        VoiceState.THINKING     -> ThinkingIndicator()
-        VoiceState.SPEAKING     -> SpeakingView(response = state.aiResponse)
-        VoiceState.INTERRUPTING -> InterruptingIndicator()
+        VoiceState.IDLE         -> IdleButton(onClick = viewModel.controller::tap)
+        VoiceState.LISTENING    -> LiveTranscriptView(text = state.partialTranscript)
+        VoiceState.THINKING     -> PulsingThinkingIndicator()
+        VoiceState.SPEAKING     -> SpeakingResponseView(text = state.aiResponse)
+        VoiceState.INTERRUPTING -> StoppingIndicator()
     }
 }
 ```
-
-### Controller Actions
-
-| Method | Description |
-|---|---|
-| `tap()` | Primary action trigger: starts listening when IDLE, sends early when LISTENING, interrupts when SPEAKING |
-| `clear()` | Cancels current turn and returns state to IDLE |
-| `dismissError()` | Clears current transient error banner |
-| `destroy()` | Releases audio hardware, network sockets, and coroutines |
 
 ---
 
-## Universal Custom BYOK (Bring Your Own Key)
+## 🌐 Universal BYOK: Connect Any Provider
 
-FluxVoice provides complete independence from vendor lock-in. Connect custom endpoints for any stage:
+FluxVoice is 100% vendor-independent. You can route to any AI provider or self-hosted endpoint:
+
+### 1. Universal Language Models (`OpenAiCompatibleLlmProvider`)
+
+One single provider powers any OpenAI-compatible completions endpoint:
 
 ```kotlin
-val controller = rememberFluxVoice {
-    // Custom Speech-to-Text: Any OpenAI/Whisper-compatible server
-    stt = CustomWhisperSttProvider(
-        baseUrl = "https://api.together.xyz/v1/audio/transcriptions",
-        apiKey = "YOUR_KEY",
-        model = "whisper-large-v3"
-    )
+// Groq (Ultra-fast LPUs)
+llm = OpenAiCompatibleLlmProvider(
+    apiKey  = BuildConfig.GROQ_KEY,
+    modelId = "openai/gpt-oss-120b"
+)
 
-    // Custom Language Model: Any OpenAI-compatible chat completions server
-    llm = OpenAiCompatibleLlmProvider(
-        baseUrl = "https://api.together.xyz/v1/chat/completions",
-        apiKey = "YOUR_KEY",
-        modelId = "meta-llama/llama-3.3-70b-instruct"
-    )
+// Google Gemini 2.5 Flash
+llm = OpenAiCompatibleLlmProvider(
+    apiKey  = BuildConfig.GEMINI_KEY,
+    modelId = "gemini-2.5-flash",
+    baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+)
 
-    // Custom Voice Synthesis: Any OpenAI-compatible audio speech server
-    tts = CustomAudioSpeechTtsProvider(
-        baseUrl = "https://api.your-tts.com/v1/audio/speech",
-        apiKey = "YOUR_KEY",
-        voice = "alloy"
-    )
-}
+// OpenAI
+llm = OpenAiCompatibleLlmProvider(
+    apiKey  = BuildConfig.OPENAI_KEY,
+    modelId = "gpt-4o-mini",
+    baseUrl = "https://api.openai.com/v1/chat/completions"
+)
+
+// OpenRouter (Access 300+ models)
+llm = OpenAiCompatibleLlmProvider(
+    apiKey  = BuildConfig.OPENROUTER_KEY,
+    modelId = "meta-llama/llama-3.3-70b-instruct",
+    baseUrl = "https://openrouter.ai/api/v1/chat/completions",
+    customHeaders = mapOf("HTTP-Referer" to "https://my-app.com")
+)
+
+// Local Ollama / vLLM (Private & Keyless)
+llm = OpenAiCompatibleLlmProvider(
+    apiKey  = "",
+    modelId = "llama3.2",
+    baseUrl = "http://192.168.1.100:11434/v1/chat/completions"
+)
 ```
 
-### Implementing Custom Provider Interfaces
+### 2. Implement Pure Kotlin Provider Interfaces
 
-You can also implement the pure Kotlin interfaces from `fluxvoice-core` directly:
+Implement pure Kotlin interfaces from `fluxvoice-core` in ~30 lines of code:
 
 ```kotlin
-// 1. Custom Language Model
-class MyCustomLlmProvider : LlmProvider {
-    override fun streamChat(messages: List<Message>, config: GenerationConfig): Flow<StreamEvent> = flow {
-        emit(StreamEvent.Start)
-        myRemoteService.streamTokens(messages).collect { token ->
-            emit(StreamEvent.Token(token))
-        }
-        emit(StreamEvent.Done)
-    }
-}
-
-// 2. Custom Speech-to-Text
+// Custom STT (Whisper, Azure, On-Device Vosk)
 class MyCustomSttProvider : SttProvider {
-    private val _state = MutableStateFlow<SttState>(SttState.Idle)
-    override val state: StateFlow<SttState> = _state.asStateFlow()
-
-    override fun startListening() { _state.value = SttState.Listening }
-    override fun stopListening()  { _state.value = SttState.FinalResult("transcribed text") }
-    override fun destroy()        { _state.value = SttState.Idle }
+    override val state = MutableStateFlow<SttState>(SttState.Idle)
+    override fun startListening() { /* open mic and stream */ }
+    override fun stopListening()  { /* emit SttState.FinalResult */ }
+    override fun destroy()        { /* cleanup resources */ }
 }
 
-// 3. Custom Text-to-Speech
+// Custom TTS (ElevenLabs, Deepgram Aura, OpenAI TTS)
 class MyCustomTtsProvider : TtsProvider {
-    private val _state = MutableStateFlow<TtsState>(TtsState.Idle)
-    override val state: StateFlow<TtsState> = _state.asStateFlow()
-
+    override val state = MutableStateFlow<TtsState>(TtsState.Idle)
     override fun speak(text: String, utteranceId: String) {
         _state.value = TtsState.Speaking
         myAudioEngine.play(text) { _state.value = TtsState.Idle }
@@ -455,74 +425,90 @@ class MyCustomTtsProvider : TtsProvider {
 
 ---
 
-## How It Works Under the Hood
+## ⚙️ Configuration Reference
 
-FluxVoice achieves human-like voice cadence by pipelining speech processing concurrently across all three stages:
+```kotlin
+val controller = rememberFluxVoice(mode) {
+    // ── Providers ──────────────────────────────────────────────────────────
+    stt = DeepgramSttProvider(apiKey = "...", model = "nova-3", endpointingMs = 500)
+    llm = OpenAiCompatibleLlmProvider(apiKey = "...", modelId = "openai/gpt-oss-120b")
+    tts = CartesiaTtsProvider(apiKey = "...", voiceId = CARTESIA_VOICE)
 
-### 1. Microphone Capture & Hardware AEC
-Audio is captured at **16 kHz, 16-bit mono PCM**. Hardware **Acoustic Echo Cancellation (AEC)** and **Noise Suppression** are engaged at the Android OS audio HAL level before audio is processed, preventing speaker audio from echoing back into the recognition stream.
+    // ── Pipeline Tuning ────────────────────────────────────────────────────
+    systemPrompt       = "You are Flux, an intelligent voice AI assistant. Deliver high-signal, direct answers tailored for spoken audio without pleasantry filler, markdown, or lists."
+    temperature        = 0.7f       // 0.0 to 2.0 (creativity)
+    maxOutputTokens    = 2048       // Generation ceiling
+    maxContextTurns    = 10         // Sliding memory window
+    speechRate         = 1.0f       // 0.5 to 2.0 playback speed
+    pitch              = 1.0f       // 0.5 to 2.0 playback pitch
 
-### 2. Speech Recognition & Socket Pre-Warming
-PCM audio is streamed live over an authenticated WebSocket connection. Partial transcripts are delivered in real time for live UI feedback. The instant an utterance boundary is detected, `preConnect()` is called in the background to warm up a fresh socket for the *next* turn during speech playback.
+    // ── Conversational Dynamics ────────────────────────────────────────────
+    vadEnabled         = true       // Enable acoustic barge-in
+    vadSensitivity     = 1000       // 200 to 3000 (lower = more sensitive)
+    backchannelEnabled = false      // Speak filler phrase during slow queries
+    backchannelDelayMs = 1500L      // Delay before filler word fires
 
-### 3. Streaming Language Generation
-Transcripts are appended to conversation history and streamed via Server-Sent Events (SSE). An adaptive word-count hint keeps answers conversational without over-constraining complex responses. Transient network errors are automatically retried with exponential backoff.
-
-### 4. Sentence-Level TTS Extraction
-As tokens stream from the LLM, `SentenceExtractor` scans the buffer for punctuation boundaries. As soon as a complete sentence is formed, it is dispatched to the TTS synthesizer immediately. Speech output begins playing while subsequent sentences are still generating.
-
-### 5. Google WebRTC VAD & Instant Barge-In
-The moment TTS audio begins playing through device speakers, a Google WebRTC Voice Activity Detector continuously monitors the mic feed. If vocal energy exceeding the VAD threshold is detected:
-1. Speech playback stops immediately.
-2. The active LLM stream job is cancelled.
-3. A 300ms echo-decay window absorbs lingering room reflection.
-4. The microphone takes over and a new listening turn starts instantly.
-
----
-
-## Privacy & Security Architecture
-
-FluxVoice is designed from the ground up with a **local-first privacy commitment**:
-
-- **Zero Transcripts in the Cloud**: Conversation history, user transcripts, and AI response texts are stored locally in the app's encrypted database.
-- **Zero Audio Storage**: Raw microphone PCM buffers and audio chunks are processed in volatile memory and never saved to persistent cloud storage.
-- **Android Keystore Encryption**: Commercial API keys entered into the app are encrypted using AES-256 GCM master keys backed by hardware secure elements.
-- **Partitioned Telemetry**: Anonymous usage metrics in Firebase are cleanly partitioned across dedicated collections (`anonymous_users`, `user_model_stats`, `model_telemetry`, `latency_telemetry`).
+    // ── Event Callbacks ────────────────────────────────────────────────────
+    onTranscript  { text     -> /* Final user speech */ }
+    onResponse    { text     -> /* Complete assistant response */ }
+    onError       { error    -> /* Pipeline exception */ }
+    onStateChange { from, to -> /* IDLE / LISTENING / THINKING / SPEAKING */ }
+    onTurnMetrics { metrics  -> /* Measured millisecond latency & tokens */ }
+}
+```
 
 ---
 
-## Try the Playground App
+## 📂 SDK Reference Examples
 
-The repository includes the full source code for the **FluxVoice Playground & Workbench** app in the [`/app`](app/) directory:
+The [`/examples`](examples/) directory contains complete, standalone sample files:
+
+| Example                                                              | Description                                                                  |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [`01_FluxVoiceScreen.kt`](examples/01_FluxVoiceScreen.kt)           | Full-screen UI with mode switching, theme, and settings navigation           |
+| [`02_FluxVoiceView_Widget.kt`](examples/02_FluxVoiceView_Widget.kt) | Embedded animated voice visualizer widget with custom dimensions and colors  |
+| [`03_HeadlessEngine.kt`](examples/03_HeadlessEngine.kt)             | Headless `FluxVoiceEngine` in a ViewModel with real-time telemetry HUD     |
+| [`04_NoTTS.kt`](examples/04_NoTTS.kt)                               | Zero API keys for TTS: on-device Android `TextToSpeech` fallback           |
+| [`05_CustomProviders.kt`](examples/05_CustomProviders.kt)           | Custom `SttProvider`, `LlmProvider`, and `TtsProvider` implementations |
+| [`06_AdvancedSettings.kt`](examples/06_AdvancedSettings.kt)         | Persistent settings screen with DataStore, navigation, and latency logging   |
+
+---
+
+## 🛠️ Run the Playground App
+
+Clone the repository and run the full **FluxVoice Playground & Workbench** on an Android device:
 
 ```bash
 git clone https://github.com/techrifter/fluxvoice.git
 ```
 
-Open the project in Android Studio, add your API keys to `local.properties` (or enter them directly in the app's Key Vault), and run it on a device.
+1. Open the project in Android Studio.
+2. (Optional) Put your API keys in `local.properties`:
 
-```properties
-# local.properties (optional, for local development & testing)
-DEEPGRAM_KEY=your_deepgram_key
-GROQ_KEY=your_groq_key
-CARTESIA_KEY=your_cartesia_key
-OPENAI_KEY=your_openai_key
-GEMINI_KEY=your_gemini_key
-ELEVENLABS_KEY=your_elevenlabs_key
-OPENROUTER_KEY=your_openrouter_key
-```
+   ```properties
+   DEEPGRAM_KEY=your_deepgram_key
+   GROQ_KEY=your_groq_key
+   CARTESIA_KEY=your_cartesia_key
+   OPENAI_KEY=your_openai_key
+   GEMINI_KEY=your_gemini_key
+   ELEVENLABS_KEY=your_elevenlabs_key
+   OPENROUTER_KEY=your_openrouter_key
+   ```
+
+   *(Or enter them directly inside the app's encrypted KeyVault settings).*
+3. Hit **Run** to test live pipelines, benchmark latency, and export Kotlin SDK code!
 
 ---
 
-## Requirements
+## 📋 Requirements
 
-- **Android SDK**: Min API 24+ (Android 7.0 Nougat) • Target API 35 (Android 15)
+- **Android SDK**: Min SDK 24+ (Android 7.0 Nougat) • Target SDK 35 (Android 15)
 - **Kotlin**: 2.0+
-- **Jetpack Compose**: Compose BOM 2024.10+ (required only for `fluxvoice-compose`)
+- **Jetpack Compose**: Compose BOM 2024.10+ (for `fluxvoice-compose`)
 - **Java**: JDK 17+
 
 ---
 
-## License
+## 📄 License
 
-FluxVoice is open-source software licensed under the [Apache License, Version 2.0](LICENSE).
+FluxVoice is open-source software licensed under the [Apache License, Version 2.0](LICENSE.md).
