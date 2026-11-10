@@ -37,14 +37,14 @@ dependencyResolutionManagement {
 ```kotlin
 dependencies {
     // Core + UI (pick the tier you need: compose transitively includes android + core)
-    implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")   // full Compose UI
-    // implementation("com.techrifter.fluxvoice:fluxvoice-android:1.0.0") // headless only
-    // implementation("com.techrifter.fluxvoice:fluxvoice-core:1.0.0")    // interfaces only
+    implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.1.0")   // full Compose UI
+    // implementation("com.techrifter.fluxvoice:fluxvoice-android:1.1.0") // headless only
+    // implementation("com.techrifter.fluxvoice:fluxvoice-core:1.1.0")    // interfaces only
 
     // Providers: mix and match freely
-    implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")   // STT via Deepgram Nova-3
-    implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")   // LLM via any OpenAI-compatible endpoint
-    implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")   // TTS via Cartesia Sonic
+    implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.1.0")   // STT via Deepgram Nova-3
+    implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.1.0")   // LLM via any OpenAI-compatible endpoint
+    implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.1.0")   // TTS via Cartesia Sonic
 
     // Required for Compose integration
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")

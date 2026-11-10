@@ -12,10 +12,10 @@
  *    CartesiaTtsProvider voiceId + modelId params
  *
  * Dependencies (app/build.gradle.kts):
- *   implementation("com.techrifter.fluxvoice:fluxvoice-android:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-android:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.1.0")
  *   implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
  */
 

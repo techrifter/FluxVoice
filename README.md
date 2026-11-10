@@ -215,12 +215,12 @@ dependencyResolutionManagement {
 // app/build.gradle.kts
 dependencies {
     // Complete Compose UI + Engine
-    implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
+    implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.1.0")
 
     // Speech & Language Providers
-    implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
-    implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
-    implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
+    implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.1.0")
+    implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.1.0")
+    implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.1.0")
 
     // Compose lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")

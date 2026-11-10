@@ -11,8 +11,8 @@
  * provider for (e.g. OpenAI Whisper, Google Gemini, ElevenLabs, Azure TTS).
  *
  * Dependencies (app/build.gradle.kts):
- *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-core:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-core:1.1.0")
  *   // No provider modules needed — you're implementing them yourself
  */
 
