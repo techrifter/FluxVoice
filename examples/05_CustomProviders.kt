@@ -106,6 +106,9 @@ class MyCustomLlmProvider : LlmProvider {
             emit(StreamEvent.Token("$word "))
         }
 
+        // Emitting token usage informs FluxVoice telemetry & benchmark records
+        emit(StreamEvent.Usage(promptTokens = 24, completionTokens = 9))
+
         emit(StreamEvent.Done)
 
         // On error: emit(StreamEvent.Error(exception))
@@ -143,6 +146,14 @@ class MyCustomTtsProvider : TtsProvider {
         _state.value = TtsState.Idle
     }
 
+    override fun setSpeechRate(rate: Float) {
+        Log.d("MY_TTS", "setSpeechRate: $rate")
+    }
+
+    override fun setPitch(pitch: Float) {
+        Log.d("MY_TTS", "setPitch: $pitch")
+    }
+
     override fun shutdown() {
         Log.d("MY_TTS", "shutdown")
         // Release all resources (audio tracks, HTTP clients, etc.)
@@ -160,11 +171,14 @@ fun VoiceScreenWithCustomProviders() {
             sttProvider = MyCustomSttProvider()
             llmProvider = MyCustomLlmProvider()
             ttsProvider = MyCustomTtsProvider()
-            systemPrompt    = "You are a helpful assistant."
+            systemPrompt    = "You are Flux, an intelligent voice AI assistant. Deliver high-signal, direct answers tailored for spoken audio without preamble, markdown, or lists."
             temperature     = 0.7f
             maxOutputTokens = 1024
             vadEnabled      = true
             backchannelEnabled = false
+            onTurnMetrics { metrics ->
+                Log.d("MY_APP", "Turn TTFA=${metrics.timeToFirstAudioMs}ms, TTFT=${metrics.timeToFirstTokenMs}ms")
+            }
         }
 
         FluxVoiceScreen(controller = controller)

@@ -75,11 +75,11 @@ class MainActivity : ComponentActivity() {
                             ttsProvider = CartesiaTtsProvider(
                                 apiKey  = "YOUR_CARTESIA_KEY",
                                 voiceId = CARTESIA_VOICE,     // named constant
-                                modelId = "sonic-3"           // default
+                                modelId = "sonic-3.6"         // default
                             )
 
                             // ── Conversation ──────────────────────────────────
-                            systemPrompt    = "You are a concise assistant. One sentence max."
+                            systemPrompt    = "You are Flux, an ultra-fast voice AI assistant. Speak with clarity and natural rhythm, delivering direct, high-signal spoken answers."
                             maxContextTurns = 6      // default 10
 
                             // ── LLM generation ───────────────────────────────
@@ -99,6 +99,9 @@ class MainActivity : ComponentActivity() {
                             onResponse    { response -> Log.d("FV", "AI said:   $response") }
                             onError       { error    -> Log.e("FV", "Error: ${error.message}") }
                             onStateChange { from, to -> Log.d("FV", "State: $from → $to") }
+                            onTurnMetrics { metrics  ->
+                                Log.d("FV", "Turn metrics: TTFA=${metrics.timeToFirstAudioMs}ms, TTFT=${metrics.timeToFirstTokenMs}ms, tokens=${metrics.totalTokens}")
+                            }
                         },
                         scope = scope
                     )
@@ -125,6 +128,9 @@ class MainActivity : ComponentActivity() {
                     Text("transcript:        ${state.transcript}",        color = Color(0xFF94A3B8))
                     Text("aiResponse:        ${state.aiResponse}",        color = Color(0xFF94A3B8))
                     Text("errorMessage:      ${state.errorMessage ?: "—"}", color = Color(0xFFEF4444))
+                    state.metrics?.let { m ->
+                        Text("metrics:           TTFT=${m.timeToFirstTokenMs}ms | TTFA=${m.timeToFirstAudioMs}ms | STT=${m.sttLatencyMs}ms", color = Color(0xFF10B981))
+                    }
 
                     Spacer(Modifier.height(12.dp))
 
