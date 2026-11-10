@@ -1,12 +1,16 @@
 package com.techrifter.fluxvoice.data.auth
 
+import android.content.Context
+import android.os.Bundle
 import android.util.Log
+import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.userProfileChangeRequest
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.techrifter.fluxvoice.domain.repository.SettingsRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.tasks.await
@@ -18,10 +22,12 @@ private const val TAG = "FirebaseAuthService"
 
 @Singleton
 class FirebaseAuthService @Inject constructor(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    @ApplicationContext private val context: Context
 ) {
     private val auth: FirebaseAuth get() = FirebaseAuth.getInstance()
     private val firestore: FirebaseFirestore get() = FirebaseFirestore.getInstance()
+    private val analytics: FirebaseAnalytics by lazy { FirebaseAnalytics.getInstance(context) }
 
     val currentUid: String? get() = auth.currentUser?.uid
     val currentUsername: String? get() = auth.currentUser?.displayName
@@ -336,6 +342,62 @@ class FirebaseAuthService @Inject constructor(
             Log.w(TAG, "Failed recording partitioned telemetry (offline or network failure): ${e.message}", e)
         }
     }
+
+    /**
+     * Anonymously logs operational pipeline errors to Firebase Analytics.
+     *
+     * STRICT PRIVACY GUARANTEES:
+     * - ZERO user prompts, audio, or conversational transcripts are logged.
+     * - ZERO API keys, tokens, or custom endpoints are logged.
+     * - Only operational metadata is recorded: stage ("STT", "LLM", "TTS"),
+     *   provider ("groq", "openai", "gemini"), sanitized error category/code ("HTTP_429", "HTTP_401", "TIMEOUT").
+     */
+    fun recordPipelineError(
+        stage: String,
+        provider: String,
+        errorCode: String,
+        errorMessage: String = "",
+        model: String = ""
+    ) {
+        try {
+            val bundle = Bundle().apply {
+                putString("stage", stage.take(32))
+                putString("provider", provider.take(32))
+                putString("error_code", errorCode.take(32))
+                if (model.isNotBlank()) putString("model", model.take(50))
+                if (errorMessage.isNotBlank()) {
+                    val sanitized = sanitizeErrorMessage(errorMessage).take(100)
+                    putString("error_detail", sanitized)
+                }
+            }
+            analytics.logEvent("pipeline_error", bundle)
+            Log.d(TAG, "Logged pipeline_error event to Firebase Analytics: stage=$stage provider=$provider code=$errorCode")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed logging pipeline error to Firebase Analytics: ${e.message}")
+        }
+    }
+
+    fun extractErrorCode(message: String): String {
+        val lower = message.lowercase()
+        return when {
+            lower.contains("429") || lower.contains("rate limit") -> "HTTP_429"
+            lower.contains("401") || lower.contains("unauthor") || lower.contains("invalid") -> "HTTP_401"
+            lower.contains("403") || lower.contains("forbidden") -> "HTTP_403"
+            lower.contains("404") || lower.contains("not found") -> "HTTP_404"
+            lower.contains("400") || lower.contains("bad request") -> "HTTP_400"
+            lower.contains("500") || lower.contains("503") || lower.contains("server error") -> "HTTP_SERVER_ERROR"
+            lower.contains("timeout") -> "TIMEOUT"
+            lower.contains("connect") || lower.contains("network") -> "NETWORK_ERROR"
+            lower.contains("websocket") -> "WS_ERROR"
+            else -> "PIPELINE_ERROR"
+        }
+    }
+
+    private fun sanitizeErrorMessage(raw: String): String = raw
+        .replace(Regex("(Bearer\\s+)[A-Za-z0-9_.-]+", RegexOption.IGNORE_CASE), "$1[REDACTED]")
+        .replace(Regex("(key=|token=|api_key=)[A-Za-z0-9_.-]+", RegexOption.IGNORE_CASE), "$1[REDACTED]")
+        .replace(Regex("https?://[^\\s]+"), "[URL]")
+        .trim()
 
     private fun telemetryFieldKey(value: String): String =
         value.lowercase()

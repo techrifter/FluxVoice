@@ -268,6 +268,13 @@ class VoiceViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(voiceState = VoiceState.IDLE, errorMessage = userFacingError(sttState.message))
                         }
+                        val sttProv = _uiState.value.activePipeline?.sttProviderId ?: settings.value.sttProvider.name.lowercase()
+                        firebaseAuthService.recordPipelineError(
+                            stage = "STT",
+                            provider = sttProv,
+                            errorCode = firebaseAuthService.extractErrorCode(sttState.message),
+                            errorMessage = sttState.message
+                        )
                     }
                     SttState.Idle -> {
                         cancelNoSpeechTimeout()
@@ -325,6 +332,13 @@ class VoiceViewModel @Inject constructor(
                     }
                     is TtsState.Error -> {
                         vadDetector.stop()
+                        val ttsProv = _uiState.value.activePipeline?.ttsProviderId ?: settings.value.ttsProvider.id
+                        firebaseAuthService.recordPipelineError(
+                            stage = "TTS",
+                            provider = ttsProv,
+                            errorCode = firebaseAuthService.extractErrorCode(ttsState.message),
+                            errorMessage = ttsState.message
+                        )
                         // Only surface TTS errors that require user action (misconfiguration).
                         // Transient network errors are non-fatal — Android TTS handles fallback.
                         val msg = when {
@@ -894,6 +908,16 @@ class VoiceViewModel @Inject constructor(
                                     startAiResponse(userInput, retryAttempt + 1)
                                 } else {
                                     isStreamingComplete = false
+                                    val errStr = event.cause.message ?: "Stream error"
+                                    val llmProv = _uiState.value.activePipeline?.llmProviderId ?: settings.value.providerType.name.lowercase()
+                                    val llmModel = _uiState.value.activePipeline?.llmModelId ?: settings.value.modelId
+                                    firebaseAuthService.recordPipelineError(
+                                        stage = "LLM",
+                                        provider = llmProv,
+                                        errorCode = firebaseAuthService.extractErrorCode(errStr),
+                                        errorMessage = errStr,
+                                        model = llmModel
+                                    )
                                     _uiState.update {
                                         it.copy(
                                             voiceState     = VoiceState.IDLE,
@@ -914,6 +938,16 @@ class VoiceViewModel @Inject constructor(
                     startAiResponse(userInput, retryAttempt + 1)
                 } else {
                     isStreamingComplete = false
+                    val errStr = e.message ?: "Exception"
+                    val llmProv = _uiState.value.activePipeline?.llmProviderId ?: settings.value.providerType.name.lowercase()
+                    val llmModel = _uiState.value.activePipeline?.llmModelId ?: settings.value.modelId
+                    firebaseAuthService.recordPipelineError(
+                        stage = "LLM",
+                        provider = llmProv,
+                        errorCode = firebaseAuthService.extractErrorCode(errStr),
+                        errorMessage = errStr,
+                        model = llmModel
+                    )
                     _uiState.update {
                         it.copy(
                             voiceState     = VoiceState.IDLE,

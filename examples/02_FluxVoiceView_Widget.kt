@@ -11,10 +11,10 @@
  * rather than replacing the whole screen with FluxVoiceScreen.
  *
  * Dependencies (app/build.gradle.kts):
- *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.1.0")
  */
 
 import android.os.Bundle
@@ -48,13 +48,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             FluxVoiceTheme {
                 val controller = rememberFluxVoice {
-                    systemPrompt = "You are a concise assistant. Answer in one sentence."
+                    systemPrompt = "You are Flux, an intelligent voice AI assistant. Deliver high-signal, direct answers tailored for spoken audio without preamble, markdown, or lists."
                     sttProvider  = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
                     llmProvider  = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
                     ttsProvider  = CartesiaTtsProvider(apiKey = "YOUR_CARTESIA_KEY")
                 }
 
-                // Your own screen — FluxVoiceView sits inside it
+                // Your own screen: FluxVoiceView sits inside it
                 Column(
                     modifier = Modifier
                         .fillMaxSize()

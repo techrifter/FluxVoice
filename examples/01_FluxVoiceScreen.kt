@@ -10,10 +10,10 @@
  *  - showConfigureCard — "Configure your AI" card in empty state
  *
  * Dependencies (app/build.gradle.kts):
- *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.1.0")
  */
 
 import android.os.Bundle

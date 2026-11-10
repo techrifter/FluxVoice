@@ -9,20 +9,20 @@ plugins {
 
 android {
     namespace = "com.techrifter.fluxvoice"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.techrifter.fluxvoice"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36
+        versionCode = 4
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

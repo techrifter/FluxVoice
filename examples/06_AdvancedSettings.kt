@@ -7,19 +7,21 @@
  *  - Navigation from FluxVoiceScreen settings icon to a settings composable
  *  - Per-field controls for: systemPrompt, temperature, maxOutputTokens,
  *    maxContextTurns, vadEnabled, vadSensitivity, backchannelEnabled
+ *  - onTurnMetrics callback — log real-time TTFT, TTFA, STT latency per turn
  *
  * The library provides the engine and config DSL.
  * Your app owns persistence, navigation, and settings UI.
  *
  * Dependencies (app/build.gradle.kts):
- *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.0.0")
- *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.0.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-compose:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-stt-deepgram:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-provider-llm:1.1.0")
+ *   implementation("com.techrifter.fluxvoice:fluxvoice-tts-cartesia:1.1.0")
  *   implementation("androidx.datastore:datastore-preferences:1.1.4")
  *   implementation("androidx.navigation:navigation-compose:2.9.0")
  */
 
+import android.util.Log
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,7 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,8 +96,8 @@ private object Keys {
     val BACKCHANNEL       = booleanPreferencesKey("backchannel_enabled")
 }
 
-// Defaults — same as FluxVoiceConfig defaults
-private const val DEFAULT_PROMPT       = "You are a helpful voice assistant."
+// Defaults: same as FluxVoiceConfig defaults
+private const val DEFAULT_PROMPT       = "You are Flux, an intelligent voice AI assistant. Deliver high-signal, direct answers tailored for spoken audio without pleasantry filler, markdown, or lists."
 private const val DEFAULT_TEMPERATURE  = 0.7f
 private const val DEFAULT_MAX_TOKENS   = 2048
 private const val DEFAULT_MAX_TURNS    = 10
@@ -160,6 +162,18 @@ class MainActivity : ComponentActivity() {
                             sttProvider = DeepgramSttProvider(apiKey = "YOUR_DEEPGRAM_KEY")
                             llmProvider = OpenAiCompatibleLlmProvider(apiKey = "YOUR_GROQ_KEY")
                             ttsProvider = CartesiaTtsProvider(apiKey = "YOUR_CARTESIA_KEY")
+
+                            // onTurnMetrics fires after every turn with real latency data.
+                            // Wire up your analytics, benchmark UI, or telemetry pipeline here.
+                            onTurnMetrics { metrics ->
+                                Log.d("VoiceMetrics",
+                                    "STT=${metrics.sttLatencyMs}ms " +
+                                    "TTFT=${metrics.timeToFirstTokenMs}ms " +
+                                    "TTFA=${metrics.timeToFirstAudioMs}ms " +
+                                    "total=${metrics.totalTurnDurationMs}ms " +
+                                    "tokens=${metrics.totalTokens}"
+                                )
+                            }
                         }
 
                         FluxVoiceScreen(
@@ -200,7 +214,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit) {
                 title = { Text("Voice Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
