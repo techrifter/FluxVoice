@@ -30,6 +30,7 @@ object NetworkModule {
         ignoreUnknownKeys = true
         isLenient = true
         explicitNulls = false
+        encodeDefaults = true
     }
 
     @Provides
