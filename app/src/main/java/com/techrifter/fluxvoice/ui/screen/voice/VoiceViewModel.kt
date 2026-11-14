@@ -9,7 +9,7 @@ import com.techrifter.fluxvoice.core.model.TurnMetrics
 import com.techrifter.fluxvoice.core.util.DispatcherProvider
 import com.techrifter.fluxvoice.data.audio.SharedAudioCapture
 import com.techrifter.fluxvoice.data.audio.VoiceActivityDetector
-import com.techrifter.fluxvoice.data.auth.FirebaseAuthService
+import com.techrifter.fluxvoice.domain.repository.TelemetryRepository
 import com.techrifter.fluxvoice.data.elevenlabs.ElevenLabsVoiceSession
 import com.techrifter.fluxvoice.data.local.db.TurnBenchmarkEntity
 import com.techrifter.fluxvoice.data.remote.scenario.VoiceScenarioService
@@ -77,7 +77,7 @@ class VoiceViewModel @Inject constructor(
     private val pipelineRepository: PipelineRepository,
     private val turnBenchmarkRepository: TurnBenchmarkRepository,
     private val voiceScenarioService: VoiceScenarioService,
-    private val firebaseAuthService: FirebaseAuthService
+    private val telemetryRepository: TelemetryRepository
 ) : ViewModel() {
 
     companion object {
@@ -269,10 +269,10 @@ class VoiceViewModel @Inject constructor(
                             it.copy(voiceState = VoiceState.IDLE, errorMessage = userFacingError(sttState.message))
                         }
                         val sttProv = _uiState.value.activePipeline?.sttProviderId ?: settings.value.sttProvider.name.lowercase()
-                        firebaseAuthService.recordPipelineError(
+                        telemetryRepository.recordPipelineError(
                             stage = "STT",
                             provider = sttProv,
-                            errorCode = firebaseAuthService.extractErrorCode(sttState.message),
+                            errorCode = "",
                             errorMessage = sttState.message
                         )
                     }
@@ -333,10 +333,10 @@ class VoiceViewModel @Inject constructor(
                     is TtsState.Error -> {
                         vadDetector.stop()
                         val ttsProv = _uiState.value.activePipeline?.ttsProviderId ?: settings.value.ttsProvider.id
-                        firebaseAuthService.recordPipelineError(
+                        telemetryRepository.recordPipelineError(
                             stage = "TTS",
                             provider = ttsProv,
-                            errorCode = firebaseAuthService.extractErrorCode(ttsState.message),
+                            errorCode = "",
                             errorMessage = ttsState.message
                         )
                         // Only surface TTS errors that require user action (misconfiguration).
@@ -911,10 +911,10 @@ class VoiceViewModel @Inject constructor(
                                     val errStr = event.cause.message ?: "Stream error"
                                     val llmProv = _uiState.value.activePipeline?.llmProviderId ?: settings.value.providerType.name.lowercase()
                                     val llmModel = _uiState.value.activePipeline?.llmModelId ?: settings.value.modelId
-                                    firebaseAuthService.recordPipelineError(
+                                    telemetryRepository.recordPipelineError(
                                         stage = "LLM",
                                         provider = llmProv,
-                                        errorCode = firebaseAuthService.extractErrorCode(errStr),
+                                        errorCode = "",
                                         errorMessage = errStr,
                                         model = llmModel
                                     )
@@ -941,10 +941,10 @@ class VoiceViewModel @Inject constructor(
                     val errStr = e.message ?: "Exception"
                     val llmProv = _uiState.value.activePipeline?.llmProviderId ?: settings.value.providerType.name.lowercase()
                     val llmModel = _uiState.value.activePipeline?.llmModelId ?: settings.value.modelId
-                    firebaseAuthService.recordPipelineError(
+                    telemetryRepository.recordPipelineError(
                         stage = "LLM",
                         provider = llmProv,
-                        errorCode = firebaseAuthService.extractErrorCode(errStr),
+                        errorCode = "",
                         errorMessage = errStr,
                         model = llmModel
                     )
@@ -1046,7 +1046,7 @@ class VoiceViewModel @Inject constructor(
 
                 // 2. Anonymously record model usage & performance metrics in Firebase
                 // ZERO audio/transcripts sent; strictly maintains local privacy promise
-                firebaseAuthService.recordTurnTelemetry(
+                telemetryRepository.recordTurnTelemetry(
                     sttProvider = stt,
                     llmModel = llm,
                     ttsProvider = tts,
