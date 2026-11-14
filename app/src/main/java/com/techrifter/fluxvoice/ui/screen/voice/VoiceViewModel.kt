@@ -32,6 +32,7 @@ import com.techrifter.fluxvoice.domain.tts.TtsEngine
 import com.techrifter.fluxvoice.domain.tts.TtsState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -115,6 +116,8 @@ class VoiceViewModel @Inject constructor(
 
     /** Active LLM streaming job — cancellable for interrupt-and-restart. */
     private var streamingJob: Job? = null
+    // Job to handle VAD re-arming delay
+    private var vadArmJob: Job? = null
 
     /** Pending backchannel job — cancelled when the first LLM token arrives. */
     private var backchannelJob: Job? = null
@@ -175,6 +178,7 @@ class VoiceViewModel @Inject constructor(
             pipelineSessionManager.observeActivePipeline().collect { pipeline ->
                 val readiness = pipeline?.let { pipelineSessionManager.checkReadiness(it) } ?: PipelineReadiness.Ready
                 _uiState.update { it.copy(activePipeline = pipeline, pipelineReadiness = readiness) }
+                sttEngine.updateConfig(modelId = pipeline?.sttModelId, endpointingMs = pipeline?.sttEndpointingMs)
             }
         }
     }
@@ -245,7 +249,6 @@ class VoiceViewModel @Inject constructor(
                         firstAudioRealtime = 0L
                         promptTokensCount = 0
                         completionTokensCount = 0
-                        bargeInFlag = false
                         Log.d(TAG, "STT FinalResult: '${sttState.text}'")
                         // Close the mic immediately — TTS is about to start.
                         sttEngine.stopListening()
@@ -302,18 +305,27 @@ class VoiceViewModel @Inject constructor(
                         // Hard mutual-exclusion guarantee: STT mic must be OFF while TTS speaks.
                         sttEngine.stopListening()
                         // Start VAD so the user can interrupt without tapping the mic button.
-                        // VAD-triggered barge-in is suppressed during the backchannel phase
-                        // (see triggerBargeIn), so it is safe to arm it here unconditionally.
-                        if (settings.value.vadEnabled && !vadDetector.isRunning) {
-                            vadDetector.start(threshold = settings.value.vadSensitivity) {
-                                Log.d(TAG, "VAD: auto barge-in triggered")
-                                viewModelScope.launch {
-                                    triggerBargeIn(fromVad = true)
+                        val isVadEnabled = _uiState.value.activePipeline?.vadEnabled ?: settings.value.vadEnabled
+                        val vadSensitivity = _uiState.value.activePipeline?.vadSensitivity ?: settings.value.vadSensitivity
+                        
+                        if (isVadEnabled && !vadDetector.isRunning) {
+                            vadArmJob?.cancel()
+                            vadArmJob = viewModelScope.launch {
+                                // AEC grace period: allow AEC to converge and trailing noises to dissipate
+                                delay(600)
+                                if (_uiState.value.voiceState == VoiceState.SPEAKING) {
+                                    vadDetector.start(threshold = vadSensitivity) {
+                                        Log.d(TAG, "VAD: auto barge-in triggered")
+                                        viewModelScope.launch {
+                                            triggerBargeIn(fromVad = true)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                     TtsState.Idle -> {
+                        vadArmJob?.cancel()
                         vadDetector.stop()
                         if (_uiState.value.voiceState == VoiceState.SPEAKING) {
                             // Primary condition: isStreamingComplete is set by StreamEvent.Done.
@@ -331,6 +343,7 @@ class VoiceViewModel @Inject constructor(
                         }
                     }
                     is TtsState.Error -> {
+                        vadArmJob?.cancel()
                         vadDetector.stop()
                         val ttsProv = _uiState.value.activePipeline?.ttsProviderId ?: settings.value.ttsProvider.id
                         telemetryRepository.recordPipelineError(
@@ -339,18 +352,8 @@ class VoiceViewModel @Inject constructor(
                             errorCode = "",
                             errorMessage = ttsState.message
                         )
-                        // Only surface TTS errors that require user action (misconfiguration).
-                        // Transient network errors are non-fatal — Android TTS handles fallback.
-                        val msg = when {
-                            ttsState.message.contains("API key", ignoreCase = true) ||
-                            ttsState.message.contains("not configured", ignoreCase = true) ->
-                                "Voice synthesis isn't configured. Check your Cartesia API key in Settings."
-                            ttsState.message.contains("401", ignoreCase = true) ||
-                            ttsState.message.contains("403", ignoreCase = true) ->
-                                "Cartesia API key is invalid. Please update it in Settings."
-                            else -> null
-                        }
-                        if (msg != null) _uiState.update { it.copy(errorMessage = msg) }
+                        
+                        _uiState.update { it.copy(errorMessage = userFacingError(ttsState.message)) }
 
                         // If streaming has completed or LLM streaming job is done, TTS error means
                         // playback will not finish via TtsState.Idle. Finalize the turn immediately
@@ -381,19 +384,31 @@ class VoiceViewModel @Inject constructor(
      *   Manual taps (fromVad = false) always proceed regardless of phase.
      */
     private fun triggerBargeIn(fromVad: Boolean = false) {
+        val isVadEnabled = _uiState.value.activePipeline?.vadEnabled ?: settings.value.vadEnabled
+        val vadSensitivity = _uiState.value.activePipeline?.vadSensitivity ?: settings.value.vadSensitivity
+
         if (fromVad && isBackchannelPhase) {
             Log.d(TAG, "VAD: false-positive barge-in suppressed during backchannel phase")
             // VAD stopped itself before this callback. Re-arm it immediately so it
             // is ready for the LLM content that is about to start playing.
-            if (settings.value.vadEnabled) {
-                vadDetector.start(threshold = settings.value.vadSensitivity) {
-                    Log.d(TAG, "VAD: auto barge-in triggered (re-armed)")
-                    viewModelScope.launch { triggerBargeIn(fromVad = true) }
+            if (isVadEnabled) {
+                vadArmJob?.cancel()
+                vadArmJob = viewModelScope.launch {
+                    delay(600)
+                    if (_uiState.value.voiceState == VoiceState.SPEAKING) {
+                        vadDetector.start(threshold = vadSensitivity) {
+                            Log.d(TAG, "VAD: auto barge-in triggered (re-armed)")
+                            viewModelScope.launch { triggerBargeIn(fromVad = true) }
+                        }
+                    }
                 }
             }
             return
         }
         bargeInFlag = true
+        finalizeAndRecordTurn(bargeInOccurred = true)
+        bargeInFlag = false
+        vadArmJob?.cancel()
         backchannelJob?.cancel()
         backchannelJob = null
         streamingJob?.cancel()
@@ -793,11 +808,13 @@ class VoiceViewModel @Inject constructor(
         // is cancelled in StreamEvent.Token so it never fires on quick replies.
         isBackchannelPhase = false
         backchannelJob?.cancel()
-        if (settings.value.ttsEnabled && settings.value.backchannelEnabled) {
+        val isBackchannelEnabled = _uiState.value.activePipeline?.backchannelEnabled ?: settings.value.backchannelEnabled
+        val delayMs = _uiState.value.activePipeline?.backchannelDelayMs ?: BACKCHANNEL_DELAY_MS
+        if (settings.value.ttsEnabled && isBackchannelEnabled) {
             backchannelJob = viewModelScope.launch {
-                kotlinx.coroutines.delay(BACKCHANNEL_DELAY_MS)
+                delay(delayMs)
                 if (_uiState.value.voiceState == VoiceState.THINKING &&
-                    settings.value.ttsEnabled && settings.value.backchannelEnabled
+                    settings.value.ttsEnabled && isBackchannelEnabled
                 ) {
                     isBackchannelPhase = true
                     ttsEngine.speak(BACKCHANNELS.random(), UUID.randomUUID().toString())
@@ -856,14 +873,23 @@ class VoiceViewModel @Inject constructor(
                                     // gap, observeTtsState won't fire a new Speaking event and VAD
                                     // will never re-arm itself.  Kick it here explicitly so barge-in
                                     // works during the actual AI response.
+                                    val isVadEnabled = _uiState.value.activePipeline?.vadEnabled ?: settings.value.vadEnabled
+                                    val vadSensitivity = _uiState.value.activePipeline?.vadSensitivity ?: settings.value.vadSensitivity
+
                                     if (wasBackchannel && !isBackchannelPhase &&
-                                        settings.value.vadEnabled && !vadDetector.isRunning &&
+                                        isVadEnabled && !vadDetector.isRunning &&
                                         ttsEngine.state.value == TtsState.Speaking
                                     ) {
                                         Log.d(TAG, "VAD: re-arming after backchannel phase ended")
-                                        vadDetector.start(threshold = settings.value.vadSensitivity) {
-                                            Log.d(TAG, "VAD: auto barge-in triggered (post-backchannel)")
-                                            viewModelScope.launch { triggerBargeIn(fromVad = true) }
+                                        vadArmJob?.cancel()
+                                        vadArmJob = viewModelScope.launch {
+                                            delay(600)
+                                            if (_uiState.value.voiceState == VoiceState.SPEAKING) {
+                                                vadDetector.start(threshold = vadSensitivity) {
+                                                    Log.d(TAG, "VAD: auto barge-in triggered (post-backchannel)")
+                                                    viewModelScope.launch { triggerBargeIn(fromVad = true) }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -963,7 +989,10 @@ class VoiceViewModel @Inject constructor(
 
     // ── Finish turn & restart ─────────────────────────────────────────────────
 
-    private fun finishTurnAndRestart() {
+    // ── Finish turn & restart ─────────────────────────────────────────────────
+
+    private fun finalizeAndRecordTurn(bargeInOccurred: Boolean) {
+        if (turnStartRealtime == 0L) return
         val now = SystemClock.elapsedRealtime()
         val sttDuration = if (sttFinalRealtime > turnStartRealtime && turnStartRealtime > 0L) sttFinalRealtime - turnStartRealtime else 0L
         val baseline = if (sttFinalRealtime > 0L) sttFinalRealtime else turnStartRealtime
@@ -973,8 +1002,6 @@ class VoiceViewModel @Inject constructor(
         } else 0L
         val total = if (turnStartRealtime > 0L) {
             now - turnStartRealtime
-        } else if (sttDuration > 0L || ttft > 0L) {
-            sttDuration + ttft
         } else 0L
 
         val activePipe = _uiState.value.activePipeline
@@ -1004,7 +1031,7 @@ class VoiceViewModel @Inject constructor(
             timeToFirstAudioMs = ttfa,
             totalTurnDurationMs = total,
             bargeInLatencyMs = null, // Only real measured latencies; no fabricated 150ms constant
-            bargeInOccurred = bargeInFlag,
+            bargeInOccurred = bargeInOccurred,
             inputTokens = finalPromptTokens,
             outputTokens = finalCompletionTokens,
             isTokensEstimated = isEstimated,
@@ -1034,7 +1061,7 @@ class VoiceViewModel @Inject constructor(
                         completionTokens = finalCompletionTokens,
                         totalTokens = totalTokens,
                         estimatedCostUsd = 0.0,
-                        bargeInOccurred = bargeInFlag,
+                        bargeInOccurred = bargeInOccurred,
                         userTranscriptionSnippet = userText.take(140),
                         assistantResponseSnippet = fullAiText.take(140),
                         isTokensEstimated = isEstimated,
@@ -1054,13 +1081,22 @@ class VoiceViewModel @Inject constructor(
                     ttfaMs = ttfa,
                     totalTurnMs = total,
                     tokens = totalTokens,
-                    bargeInOccurred = bargeInFlag,
+                    bargeInOccurred = bargeInOccurred,
                     pipelineName = pipeName
                 )
             }
         }
 
         turnStartRealtime = 0L
+        sttFinalRealtime = 0L
+        firstTokenRealtime = 0L
+        firstAudioRealtime = 0L
+        promptTokensCount = 0
+        completionTokensCount = 0
+    }
+
+    private fun finishTurnAndRestart() {
+        finalizeAndRecordTurn(bargeInOccurred = bargeInFlag)
         isStreamingComplete = false
         bargeInFlag = false
         _uiState.update { it.copy(voiceState = VoiceState.IDLE, userTranscript = "", aiResponse = "") }
@@ -1093,6 +1129,10 @@ class VoiceViewModel @Inject constructor(
             "Microphone access is needed. Please grant the permission in your device settings."
         raw.contains("401", ignoreCase = true)            ->
             "API key is invalid or expired. Please update it in Settings."
+        raw.contains("402", ignoreCase = true)            ->
+            "Payment required or out of credits. Please check your provider account."
+        raw.contains("403", ignoreCase = true)            ->
+            "Access forbidden. Please check your API key and permissions."
         raw.contains("429", ignoreCase = true)            ->
             "Service is busy right now. Please wait a moment and try again."
         raw.contains("timeout", ignoreCase = true) ||
@@ -1104,7 +1144,7 @@ class VoiceViewModel @Inject constructor(
             "Connection interrupted. Tap the mic to try again."
         raw.isEmpty()                                     ->
             "Something went wrong. Tap the mic to try again."
-        else -> "Something went wrong. Tap the mic to try again."
+        else -> raw // Show the actual error so the user isn't kept in the dark
     }
 
     // ── Sentence extraction ───────────────────────────────────────────────────

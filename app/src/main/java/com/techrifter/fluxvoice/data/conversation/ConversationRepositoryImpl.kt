@@ -11,12 +11,14 @@ import com.techrifter.fluxvoice.domain.repository.ConversationRepository
 import com.techrifter.fluxvoice.domain.repository.SettingsRepository
 import com.techrifter.fluxvoice.domain.streaming.AiStreamingProvider
 import com.techrifter.fluxvoice.domain.streaming.StreamEvent
+import com.techrifter.fluxvoice.domain.pipeline.PipelineSessionManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,6 +42,7 @@ private const val TAG = "FluxVoice"
 class ConversationRepositoryImpl @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val keyVault: KeyVault,
+    private val pipelineSessionManager: PipelineSessionManager,
     /** Hilt multi-binding: one entry per registered AI provider. */
     private val providers: Map<ProviderType, @JvmSuppressWildcards AiStreamingProvider>
 ) : ConversationRepository {
@@ -50,23 +53,30 @@ class ConversationRepositoryImpl @Inject constructor(
     override val history: List<Message> get() = _historyFlow.value
 
     override fun streamResponse(userInput: String, systemPromptOverride: String?): Flow<StreamEvent> = channelFlow {
-        // 1. Load current settings (provider selection, API keys, model config)
+        // 1. Load current settings & active pipeline
         val settings = settingsRepository.getSettings().first()
+        val pipeline = pipelineSessionManager.observeActivePipeline().firstOrNull()
+
+        val providerType = pipeline?.llmProviderId?.let { id ->
+            ProviderType.entries.find { it.name.equals(id, ignoreCase = true) }
+        } ?: settings.providerType
+
+        val modelId = pipeline?.llmModelId?.takeIf { it.isNotBlank() } ?: settings.modelId
 
         val effectiveModelId = when {
-            settings.providerType == ProviderType.GROQ && (settings.modelId.isBlank() || settings.modelId.contains("llama-3.3-70b-versatile")) ->
+            providerType == ProviderType.GROQ && (modelId.isBlank() || modelId.contains("llama-3.3-70b-versatile")) ->
                 ProviderType.GROQ.defaultModel
-            else -> settings.modelId.ifBlank { settings.providerType.defaultModel }
+            else -> modelId.ifBlank { providerType.defaultModel }
         }
 
-        Log.d(TAG, "streamResponse: provider=${settings.providerType} model=$effectiveModelId")
+        Log.d(TAG, "streamResponse: provider=$providerType model=$effectiveModelId")
 
-        val provider = providers[settings.providerType]
+        val provider = providers[providerType]
             ?: providers[ProviderType.GEMINI]
             ?: error("No AI provider registered: check ProviderModule bindings")
 
         // ── Pre-flight: validate credentials before hitting the network ──────
-        val effectiveKey: String = when (settings.providerType) {
+        val effectiveKey: String = when (providerType) {
             ProviderType.GEMINI        -> settings.geminiApiKey.ifBlank { keyVault.getGeminiKey() }
             ProviderType.GROQ          -> settings.groqApiKey.ifBlank { keyVault.getGroqKey() }
             ProviderType.OPENAI_COMPAT -> settings.openAiApiKey.ifBlank {
@@ -76,7 +86,7 @@ class ConversationRepositoryImpl @Inject constructor(
             ProviderType.LOCAL         -> ""
         }
 
-        val missingKeyError: String? = when (settings.providerType) {
+        val missingKeyError: String? = when (providerType) {
             ProviderType.GEMINI        -> if (effectiveKey.isBlank())
                 "Gemini API key is not set. Go to Settings / Key Vault and add your key." else null
             ProviderType.GROQ          -> if (effectiveKey.isBlank())
@@ -95,14 +105,14 @@ class ConversationRepositoryImpl @Inject constructor(
 
         val authConfig = AuthConfig(
             apiKey = effectiveKey,
-            baseUrl = settings.localLlmUrl
+            baseUrl = pipeline?.customEndpointUrl?.takeIf { it.isNotBlank() } ?: settings.localLlmUrl
         )
         val genConfig = GenerationConfig(
             modelId         = effectiveModelId,
-            temperature     = settings.temperature,
-            maxOutputTokens = 512,
+            temperature     = pipeline?.temperature ?: settings.temperature,
+            maxOutputTokens = pipeline?.maxOutputTokens ?: 2048,
             // Use per-turn override (adaptive length hint) if provided, else stored prompt
-            systemPrompt    = (systemPromptOverride ?: settings.systemPrompt).takeIf { it.isNotBlank() }
+            systemPrompt    = (systemPromptOverride ?: pipeline?.systemPrompt ?: settings.systemPrompt).takeIf { it.isNotBlank() }
         )
 
         // 2. Append user turn and trim context window (guarded against duplicate on retry)
