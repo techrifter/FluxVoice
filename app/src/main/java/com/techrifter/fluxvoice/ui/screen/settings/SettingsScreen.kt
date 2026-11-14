@@ -797,12 +797,20 @@ private fun CustomModeContent(
                         placeholder = "https://api.openai.com"
                     )
                 }
-                ProviderType.LOCAL -> SettingsTextField(
-                    label = "Ollama URL",
-                    value = settings.localLlmUrl,
-                    onValueChange = viewModel::updateLocalLlmUrl,
-                    placeholder = "http://localhost:11434"
-                )
+                ProviderType.LOCAL -> Column {
+                    SettingsTextField(
+                        label = "Ollama URL",
+                        value = settings.localLlmUrl,
+                        onValueChange = viewModel::updateLocalLlmUrl,
+                        placeholder = "http://192.168.1.X:11434"
+                    )
+                    Text(
+                        text = "To connect to an Ollama server running on your computer, both your phone and computer must be on the same Wi-Fi network. Enter your computer's local IP address (e.g., 192.168.1.100).",
+                        color = TextSlateMedium,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 2.dp, top = 2.dp)
+                    )
+                }
                 ProviderType.OPENROUTER -> {
                     ApiKeyField(
                         label = "OpenRouter API Key",
