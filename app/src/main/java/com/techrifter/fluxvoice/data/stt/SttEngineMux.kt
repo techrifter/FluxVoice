@@ -84,9 +84,11 @@ class SttEngineMux @Inject constructor(
     override fun stopListening()  = activeEngine().stopListening()
     override fun preConnect()     = activeEngine().preConnect()
 
-    override fun updateConfig(modelId: String?, endpointingMs: Int?) {
-        deepgram.updateConfig(modelId, endpointingMs)
-        // other engines can receive this as well if they support it
+    override fun updateConfig(modelId: String?, endpointingMs: Int?, languageCode: String?) {
+        deepgram.updateConfig(modelId, endpointingMs, languageCode)
+        whisper.updateConfig(modelId, endpointingMs, languageCode)
+        groqWhisper.updateConfig(modelId, endpointingMs, languageCode)
+        customStt.updateConfig(modelId, endpointingMs, languageCode)
     }
 
     override fun destroy() {

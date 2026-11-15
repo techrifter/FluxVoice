@@ -21,7 +21,8 @@ class PcmAudioTrackPlayer(private val tag: String = "PcmAudioTrackPlayer") {
     suspend fun playPcm(
         pcm: ByteArray,
         sampleRate: Int = 24000,
-        numChannels: Int = 1
+        numChannels: Int = 1,
+        speechRate: Float = 1.0f
     ) {
         if (pcm.isEmpty()) return
 
@@ -45,7 +46,7 @@ class PcmAudioTrackPlayer(private val tag: String = "PcmAudioTrackPlayer") {
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -61,10 +62,20 @@ class PcmAudioTrackPlayer(private val tag: String = "PcmAudioTrackPlayer") {
             .build()
 
         activeTrack = track
+
+        val effectiveRate = speechRate.coerceIn(0.5f, 2.0f)
+        if (effectiveRate != 1.0f) {
+            runCatching {
+                val params = track.playbackParams
+                params.speed = effectiveRate
+                track.playbackParams = params
+            }
+        }
+
         track.write(rawPcm, 0, rawPcm.size)
         track.play()
 
-        val durationMs = rawPcm.size.toLong() * 1000L / (sampleRate.toLong() * numChannels * 2)
+        val durationMs = (rawPcm.size.toLong() * 1000L / (sampleRate.toLong() * numChannels * 2) / effectiveRate).toLong()
         try {
             delay(durationMs + 180L) // 180ms buffer guard
         } finally {
@@ -79,18 +90,22 @@ class PcmAudioTrackPlayer(private val tag: String = "PcmAudioTrackPlayer") {
     /**
      * Plays WAV audio buffer by extracting the PCM payload from RIFF data chunk.
      */
-    suspend fun playWav(wavBytes: ByteArray, defaultSampleRate: Int = 24000) {
+    suspend fun playWav(
+        wavBytes: ByteArray,
+        defaultSampleRate: Int = 24000,
+        speechRate: Float = 1.0f
+    ) {
         val dataOffset = findDataChunkOffset(wavBytes)
         if (dataOffset < 0 || dataOffset >= wavBytes.size) {
             // Assume raw PCM fallback if header not found
-            playPcm(wavBytes, defaultSampleRate, 1)
+            playPcm(wavBytes, defaultSampleRate, 1, speechRate)
             return
         }
 
         val numChannels = readShortLE(wavBytes, 22).coerceIn(1, 2)
         val sampleRate = readIntLE(wavBytes, 24).let { if (it > 0) it else defaultSampleRate }
         val pcm = wavBytes.copyOfRange(dataOffset, wavBytes.size)
-        playPcm(pcm, sampleRate, numChannels)
+        playPcm(pcm, sampleRate, numChannels, speechRate)
     }
 
     fun stop() {

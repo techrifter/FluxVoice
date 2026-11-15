@@ -66,6 +66,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -148,7 +149,8 @@ fun VoiceScreen(
     val hasConversation = uiState.messages.isNotEmpty() ||
             uiState.partialTranscript.isNotEmpty() ||
             uiState.userTranscript.isNotEmpty() ||
-            uiState.aiResponse.isNotEmpty()
+            uiState.aiResponse.isNotEmpty() ||
+            uiState.voiceState != VoiceState.IDLE
 
     Box(
         modifier = Modifier
@@ -543,58 +545,109 @@ fun VoiceScreen(
                                 .verticalScroll(scrollState),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // 1. All historical turns in chronological order
-                            uiState.messages.forEach { message ->
-                                when (message.role) {
-                                    MessageRole.USER -> {
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = ObsidianCard,
-                                            border = BorderStroke(1.dp, HairlineBorder),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
-                                                Text(
-                                                    text = "YOU",
-                                                    fontFamily = FontFamily.Monospace,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = FluxAzure
-                                                )
-                                                Spacer(Modifier.height(2.dp))
-                                                Text(
-                                                    text = message.content,
-                                                    fontSize = 13.5.sp,
-                                                    color = TextPureWhite,
-                                                    lineHeight = 19.sp
-                                                )
-                                            }
+                            // Unified Conversation Card Pipeline (Single Stream List)
+                            val conversationCards = remember(
+                                uiState.messages,
+                                uiState.voiceState,
+                                uiState.partialTranscript,
+                                uiState.userTranscript,
+                                uiState.aiResponse
+                            ) {
+                                val result = mutableListOf<Triple<String, MessageRole, String>>()
+                                var userCount = 0
+                                var aiCount = 0
+
+                                // 1. Historical messages
+                                uiState.messages.forEach { msg ->
+                                    when (msg.role) {
+                                        MessageRole.USER -> {
+                                            val key = "user_card_${userCount++}"
+                                            result.add(Triple(key, MessageRole.USER, msg.content))
                                         }
+                                        MessageRole.ASSISTANT -> {
+                                            val key = "ai_card_${aiCount++}"
+                                            result.add(Triple(key, MessageRole.ASSISTANT, msg.content))
+                                        }
+                                        MessageRole.SYSTEM -> {}
                                     }
-                                    MessageRole.ASSISTANT -> {
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = ObsidianCard,
-                                            border = BorderStroke(1.dp, HairlineHighlight),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
+                                }
+
+                                // 2. Active User Turn (only if NOT yet committed to messages)
+                                val lastIsUser = uiState.messages.lastOrNull()?.role == MessageRole.USER
+                                val isUserActive = (uiState.voiceState == VoiceState.LISTENING ||
+                                        uiState.voiceState == VoiceState.INTERRUPTING ||
+                                        uiState.voiceState == VoiceState.THINKING ||
+                                        uiState.partialTranscript.isNotBlank()) && !lastIsUser
+
+                                if (isUserActive) {
+                                    val userText = when {
+                                        uiState.partialTranscript.isNotBlank() -> uiState.partialTranscript
+                                        uiState.userTranscript.isNotBlank() -> uiState.userTranscript
+                                        uiState.voiceState == VoiceState.LISTENING || uiState.voiceState == VoiceState.INTERRUPTING -> "Listening…"
+                                        else -> "Thinking…"
+                                    }
+                                    val key = "user_card_${userCount}"
+                                    result.add(Triple(key, MessageRole.USER, userText))
+                                }
+
+                                // 3. Active AI Stream Turn (only if NOT yet committed to messages)
+                                val lastIsAssistant = uiState.messages.lastOrNull()?.role == MessageRole.ASSISTANT
+                                if (uiState.aiResponse.isNotBlank() && !lastIsAssistant) {
+                                    val key = "ai_card_${aiCount}"
+                                    result.add(Triple(key, MessageRole.ASSISTANT, uiState.aiResponse))
+                                }
+
+                                result
+                            }
+
+                            conversationCards.forEach { (cardKey, role, contentText) ->
+                                key(cardKey) {
+                                    val isUser = role == MessageRole.USER
+                                    val isLiveUserCard = cardKey.startsWith("user_card_") && (uiState.voiceState == VoiceState.LISTENING || uiState.voiceState == VoiceState.INTERRUPTING || uiState.voiceState == VoiceState.THINKING) && uiState.messages.none { it.role == MessageRole.USER && it.content == contentText }
+                                    val headerText = if (isUser) {
+                                        when {
+                                            isLiveUserCard && uiState.voiceState == VoiceState.LISTENING -> "YOU (LISTENING…)"
+                                            isLiveUserCard && uiState.voiceState == VoiceState.INTERRUPTING -> "YOU (INTERRUPTING…)"
+                                            isLiveUserCard && uiState.voiceState == VoiceState.THINKING -> "YOU (THINKING…)"
+                                            else -> "YOU"
+                                        }
+                                    } else {
+                                        val isLiveAiCard = cardKey.startsWith("ai_card_") && uiState.voiceState == VoiceState.SPEAKING
+                                        if (isLiveAiCard) "FLUX AI (SPEAKING…)" else "FLUX AI"
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = ObsidianCard,
+                                        border = BorderStroke(1.dp, if (isUser) HairlineBorder else HairlineHighlight),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
                                                 Row(
-                                                    modifier = Modifier.fillMaxWidth(),
                                                     verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                                 ) {
                                                     Text(
-                                                        text = "FLUX AI",
+                                                        text = headerText,
                                                         fontFamily = FontFamily.Monospace,
                                                         fontSize = 9.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = FluxCyan
+                                                        color = if (isUser) FluxAzure else FluxCyan
                                                     )
+                                                    if (isUser && (uiState.voiceState == VoiceState.LISTENING || uiState.voiceState == VoiceState.INTERRUPTING)) {
+                                                        Box(Modifier.size(5.dp).background(FluxAzure, CircleShape))
+                                                    }
+                                                }
+                                                if (!isUser && contentText.isNotBlank()) {
                                                     IconButton(
                                                         onClick = {
                                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                                            val clip = ClipData.newPlainText("AI Response", message.content)
+                                                            val clip = ClipData.newPlainText("AI Response", contentText)
                                                             clipboard?.setPrimaryClip(clip)
                                                             Toast.makeText(context, "Copied response", Toast.LENGTH_SHORT).show()
                                                         },
@@ -603,122 +656,15 @@ fun VoiceScreen(
                                                         Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = TextSlateMuted, modifier = Modifier.size(12.dp))
                                                     }
                                                 }
-                                                Spacer(Modifier.height(3.dp))
-                                                Text(
-                                                    text = message.content,
-                                                    fontSize = 13.5.sp,
-                                                    color = TextPureWhite,
-                                                    lineHeight = 19.sp
-                                                )
                                             }
-                                        }
-                                    }
-                                    MessageRole.SYSTEM -> {}
-                                }
-                            }
-
-                            // 2. In-progress Live User Transcription (only while actively listening or thinking)
-                            val isUserTranscriptAlreadyInMessages = uiState.userTranscript.isNotBlank() && uiState.messages.any {
-                                it.role == MessageRole.USER && it.content.trim().equals(uiState.userTranscript.trim(), ignoreCase = true)
-                            }
-
-                            val liveUserText = when {
-                                uiState.voiceState == VoiceState.IDLE -> ""
-                                uiState.partialTranscript.isNotBlank() -> uiState.partialTranscript
-                                uiState.userTranscript.isNotBlank() && !isUserTranscriptAlreadyInMessages -> uiState.userTranscript
-                                else -> ""
-                            }
-
-                            if (liveUserText.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = ObsidianCard,
-                                    border = BorderStroke(1.dp, HairlineHighlight),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
+                                            Spacer(Modifier.height(2.dp))
                                             Text(
-                                                text = if (uiState.voiceState == VoiceState.LISTENING) "YOU (LISTENING…)" else "YOU",
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = FluxAzure
+                                                text = contentText,
+                                                fontSize = 13.5.sp,
+                                                color = TextPureWhite,
+                                                lineHeight = 19.sp
                                             )
-                                            if (uiState.voiceState == VoiceState.LISTENING) {
-                                                Box(Modifier.size(5.dp).background(FluxAzure, CircleShape))
-                                            }
                                         }
-                                        Spacer(Modifier.height(2.dp))
-                                        Text(
-                                            text = liveUserText,
-                                            fontSize = 13.5.sp,
-                                            color = TextPureWhite,
-                                            lineHeight = 19.sp
-                                        )
-                                    }
-                                }
-                            }
-
-                            // 3. In-progress Live AI Streaming (while generating / speaking)
-                            val isAiResponseAlreadyInMessages = uiState.aiResponse.isNotBlank() && uiState.messages.any {
-                                it.role == MessageRole.ASSISTANT && it.content.trim().equals(uiState.aiResponse.trim(), ignoreCase = true)
-                            }
-
-                            if (uiState.aiResponse.isNotBlank() && !isAiResponseAlreadyInMessages) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = ObsidianCard,
-                                    border = BorderStroke(1.dp, HairlineHighlight),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(10.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = "FLUX AI",
-                                                    fontFamily = FontFamily.Monospace,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = FluxCyan
-                                                )
-                                                if (uiState.voiceState == VoiceState.SPEAKING || uiState.voiceState == VoiceState.THINKING) {
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                        Box(Modifier.size(4.dp).background(FluxViolet, CircleShape))
-                                                        Box(Modifier.size(4.dp).background(FluxRose, CircleShape))
-                                                        Box(Modifier.size(4.dp).background(FluxAzure, CircleShape))
-                                                    }
-                                                }
-                                            }
-                                            IconButton(
-                                                onClick = {
-                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                                    val clip = ClipData.newPlainText("AI Response", uiState.aiResponse)
-                                                    clipboard?.setPrimaryClip(clip)
-                                                    Toast.makeText(context, "Copied response", Toast.LENGTH_SHORT).show()
-                                                },
-                                                modifier = Modifier.size(20.dp)
-                                            ) {
-                                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = TextSlateMuted, modifier = Modifier.size(12.dp))
-                                            }
-                                        }
-                                        Spacer(Modifier.height(3.dp))
-                                        Text(
-                                            text = uiState.aiResponse,
-                                            fontSize = 13.5.sp,
-                                            color = TextPureWhite,
-                                            lineHeight = 19.sp
-                                        )
                                     }
                                 }
                             }

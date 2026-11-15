@@ -39,6 +39,9 @@ interface SettingsRepository {
     // ── Voice Conversation ────────────────────────────────────────────────────
     suspend fun updateMaxContextTurns(value: Int)
 
+    // ── Global Language ───────────────────────────────────────────────────────
+    suspend fun updateLanguageCode(value: String)
+
     // ── Text-to-Speech ────────────────────────────────────────────────────────
     suspend fun updateTtsEnabled(value: Boolean)
     suspend fun updateTtsProvider(value: String)

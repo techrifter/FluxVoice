@@ -2,6 +2,8 @@ package com.techrifter.fluxvoice.data.tts
 
 import android.util.Log
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.model.AppLanguage
+import com.techrifter.fluxvoice.domain.repository.SettingsRepository
 import com.techrifter.fluxvoice.domain.tts.TtsEngine
 import com.techrifter.fluxvoice.domain.tts.TtsState
 import io.ktor.client.HttpClient
@@ -52,6 +54,7 @@ private data class DeepgramSpeakRequest(
 class DeepgramAuraTtsEngine @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json,
+    private val settingsRepository: SettingsRepository,
     private val keyVault: KeyVault,
     private val androidFallback: AndroidTtsEngine
 ) : TtsEngine {
@@ -68,12 +71,19 @@ class DeepgramAuraTtsEngine @Inject constructor(
     private var idleDebounceJob: Job? = null
 
     @Volatile var activeModel: String = DEFAULT_DEEPGRAM_AURA_VOICE
+    @Volatile private var cachedModel: String = DEFAULT_DEEPGRAM_AURA_VOICE
+    @Volatile private var cachedLanguage = "en"
 
     init {
         startWorker()
         engineScope.launch {
+            settingsRepository.getSettings().collect { s ->
+                cachedModel = s.cartesiaVoiceId.ifBlank { activeModel.ifBlank { DEFAULT_DEEPGRAM_AURA_VOICE } }
+            }
+        }
+        engineScope.launch {
             androidFallback.state.collect { s ->
-                if (pendingCount.get() == 0 && keyVault.getDeepgramKey().isBlank()) {
+                if (pendingCount.get() == 0) {
                     _state.value = s
                 }
             }
@@ -96,7 +106,7 @@ class DeepgramAuraTtsEngine @Inject constructor(
         _state.value = TtsState.Speaking
 
         if (key.isBlank()) {
-            Log.d(TAG, "No Deepgram key — delegating to Android TTS")
+            Log.d(TAG, "No Deepgram key : delegating to Android TTS")
             val remaining = pendingCount.decrementAndGet()
             if (remaining <= 0) {
                 pendingCount.set(0)
@@ -106,7 +116,17 @@ class DeepgramAuraTtsEngine @Inject constructor(
             return
         }
 
-        speakChannel.trySend(DeepgramSpeakRequest(text, utteranceId, key, activeModel.ifBlank { DEFAULT_DEEPGRAM_AURA_VOICE }))
+        if (!cachedLanguage.startsWith("en", ignoreCase = true)) {
+            val langName = AppLanguage.fromCode(cachedLanguage).displayName
+            val msg = "Deepgram Aura TTS does not support $langName. Select Cartesia, ElevenLabs, OpenAI, or Android TTS."
+            Log.e(TAG, msg)
+            val remaining = pendingCount.decrementAndGet()
+            if (remaining <= 0) pendingCount.set(0)
+            _state.value = TtsState.Error(msg)
+            return
+        }
+
+        speakChannel.trySend(DeepgramSpeakRequest(text, utteranceId, key, cachedModel))
     }
 
     override fun stop() {
@@ -121,12 +141,20 @@ class DeepgramAuraTtsEngine @Inject constructor(
         startWorker()
     }
 
+    @Volatile private var cachedSpeechRate = 1.0f
+
     override fun setSpeechRate(rate: Float) {
+        cachedSpeechRate = rate.coerceIn(0.5f, 2.0f)
         androidFallback.setSpeechRate(rate)
     }
 
     override fun setPitch(pitch: Float) {
         androidFallback.setPitch(pitch)
+    }
+
+    override fun setLanguage(languageCode: String) {
+        cachedLanguage = languageCode
+        androidFallback.setLanguage(languageCode)
     }
 
     override fun shutdown() {
@@ -139,7 +167,7 @@ class DeepgramAuraTtsEngine @Inject constructor(
         try {
             Log.d(TAG, "Deepgram Aura synthesizing '${req.text.take(50)}'")
             val audioBytes = callDeepgramApi(req) ?: return
-            audioPlayer.playWav(audioBytes, defaultSampleRate = SAMPLE_RATE)
+            audioPlayer.playWav(audioBytes, defaultSampleRate = SAMPLE_RATE, speechRate = cachedSpeechRate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

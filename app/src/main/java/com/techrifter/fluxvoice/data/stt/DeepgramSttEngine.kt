@@ -42,12 +42,11 @@ import javax.inject.Singleton
 /** Max transparent reconnects before surfacing an error to the user. */
 private const val MAX_RECONNECTS = 2
 
-/** Discard pre-warm sockets older than this — Deepgram closes idle connections ~30 s. */
+/** Discard pre-warm sockets older than this : Deepgram closes idle connections ~30 s. */
 private const val PRE_WARM_MAX_AGE_MS = 25_000L
 
 private const val DEEPGRAM_BASE_URL = "wss://api.deepgram.com/v1/listen" +
-    "?language=en" +
-    "&encoding=linear16" +
+    "?encoding=linear16" +
     "&sample_rate=${SharedAudioCapture.SAMPLE_RATE}" +
     "&channels=1" +
     "&interim_results=true" +
@@ -58,10 +57,10 @@ private const val DEEPGRAM_BASE_URL = "wss://api.deepgram.com/v1/listen" +
  * Real-time streaming STT backed by the Deepgram Nova-3 model.
  *
  * Flow:
- *  1. [startListening] — opens a WebSocket to Deepgram and starts streaming raw PCM chunks.
- *  2. Deepgram sends interim transcripts → [SttState.PartialResult] on every frame.
- *  3. After [endpointing] ms of silence Deepgram sets speech_final=true → [SttState.FinalResult].
- *  4. [stopListening] — sends `CloseStream` so Deepgram finalises any in-flight transcript.
+ *  1. [startListening] : opens a WebSocket to Deepgram and starts streaming raw PCM chunks.
+ *  2. Deepgram sends interim transcripts -> [SttState.PartialResult] on every frame.
+ *  3. After [endpointing] ms of silence Deepgram sets speech_final=true -> [SttState.FinalResult].
+ *  4. [stopListening] : sends `CloseStream` so Deepgram finalises any in-flight transcript.
  *
  * Requires DEEPGRAM_API_KEY to be set in app settings.
  */
@@ -70,7 +69,7 @@ class DeepgramSttEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsDataStore: SettingsDataStore,
     private val keyVault: KeyVault,
-    /** Shared single-microphone capture session — eliminates the double-AudioRecord problem. */
+    /** Shared single-microphone capture session : eliminates the double-AudioRecord problem. */
     private val sharedCapture: SharedAudioCapture
 ) : SttEngine {
 
@@ -82,6 +81,7 @@ class DeepgramSttEngine @Inject constructor(
 
     @Volatile private var currentModelId: String = "nova-3"
     @Volatile private var currentEndpointingMs: Int = 500
+    @Volatile private var currentLanguage: String = "en"
 
     @Volatile private var isRecording   = false
     @Volatile private var activeSocket: WebSocket? = null
@@ -120,13 +120,8 @@ class DeepgramSttEngine @Inject constructor(
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
-    override fun updateConfig(modelId: String?, endpointingMs: Int?) {
-        if (modelId != null) currentModelId = modelId
-        if (endpointingMs != null) currentEndpointingMs = endpointingMs
-    }
-
     private fun buildUrl(): String {
-        return "$DEEPGRAM_BASE_URL&model=$currentModelId&endpointing=$currentEndpointingMs"
+        return "$DEEPGRAM_BASE_URL&model=$currentModelId&language=$currentLanguage&endpointing=$currentEndpointingMs"
     }
 
     // ── Pre-warm state ────────────────────────────────────────────────────────
@@ -177,6 +172,11 @@ class DeepgramSttEngine @Inject constructor(
     private var preConnectJob: Job? = null
 
     // ── SttEngine ─────────────────────────────────────────────────────────────
+    override fun updateConfig(modelId: String?, endpointingMs: Int?, languageCode: String?) {
+        modelId?.let { currentModelId = it }
+        endpointingMs?.let { currentEndpointingMs = it }
+        languageCode?.let { currentLanguage = it }
+    }
 
     override fun startListening() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -344,10 +344,10 @@ class DeepgramSttEngine @Inject constructor(
                     return
                 }
                 if (_state.value !is SttState.FinalResult) {
-                    val codeStr = response?.code?.let { " HTTP $it" } ?: ""
-                    _state.value = SttState.Error(
-                        "Deepgram error: ${t.message ?: "network failure"}$codeStr"
-                    )
+                    val codeStr = response?.code?.let { " HTTP_$it" } ?: ""
+                    val msg = "Deepgram error: ${t.message ?: "network failure"}$codeStr"
+                    Log.e(TAG, msg)
+                    _state.value = SttState.Error(msg)
                 }
             }
 

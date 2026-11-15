@@ -13,6 +13,9 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsText
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -37,8 +40,8 @@ import javax.inject.Singleton
 private const val TAG = "CartesiaTTS"
 private const val CARTESIA_TTS_URL = "https://api.cartesia.ai/tts/bytes"
 private const val CARTESIA_API_VERSION = "2024-06-10"
-private const val DEFAULT_MODEL_ID = "sonic-3.6"
-const val DEFAULT_CARTESIA_VOICE_ID = "638efaaa-4d0c-442e-b701-3fae16aad012"
+private const val DEFAULT_MODEL_ID = "sonic-latest"
+const val DEFAULT_CARTESIA_VOICE_ID = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
 private const val SAMPLE_RATE = 44100
 
 // ── Cartesia request DTOs ──────────────────────────────────────────────────────
@@ -49,6 +52,7 @@ private data class CartesiaRequest(
     val transcript: String,
     val voice: CartesiaVoice,
     @SerialName("output_format") val outputFormat: CartesiaOutputFormat,
+    val language: String? = null,
     @SerialName("generation_config") val generationConfig: CartesiaGenerationConfig = CartesiaGenerationConfig()
 )
 
@@ -120,6 +124,7 @@ class CartesiaTtsEngine @Inject constructor(
     /** Cached settings — updated by a background collector so speak() never suspends. */
     @Volatile private var cachedApiKey  = ""
     @Volatile private var cachedVoiceId = DEFAULT_CARTESIA_VOICE_ID
+    @Volatile private var cachedLanguage = "en"
 
     /**
      * Debounce job that delays the [TtsState.Idle] emission by [IDLE_DEBOUNCE_MS].
@@ -140,10 +145,23 @@ class CartesiaTtsEngine @Inject constructor(
     init {
         startWorker()
         // Keep cachedApiKey/cachedVoiceId in sync so speak() never suspends to fetch settings.
+        val validCartesiaVoices = setOf(
+            "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4", // Skylar
+            "47c38ca4-5f35-497b-b1a3-415245fb35e1", // Daniel
+            "62ae83ad-4f6a-430b-af41-a9bede9286ca", // Gemma
+            "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", // Jacqueline
+            "30894953-bcce-41fe-892c-15ce19c843ff", // Parker
+            "ef191366-f52f-447a-a398-ed8c0f2943a1", // Archie
+            "b24f41fd-00a3-4cd8-992a-a0c9f13f3ef1", // Clive
+            "2a12b36c-7f9b-4c3a-9f7a-72731b15323a", // Ella
+            "12e85709-099c-480a-ba3e-875c41a9611a", // Arlo
+            "630ed21c-2c5c-41cf-9d82-10a7fd668370"  // Corey
+        )
         engineScope.launch {
             settingsRepository.getSettings().collect { s ->
                 cachedApiKey  = s.cartesiaApiKey.ifBlank { keyVault.getCartesiaKey() }
-                cachedVoiceId = s.cartesiaVoiceId.ifBlank { DEFAULT_CARTESIA_VOICE_ID }
+                val rawVoice = s.cartesiaVoiceId.ifBlank { DEFAULT_CARTESIA_VOICE_ID }
+                cachedVoiceId = if (rawVoice in validCartesiaVoices) rawVoice else DEFAULT_CARTESIA_VOICE_ID
             }
         }
         // Forward Android TTS fallback state whenever Cartesia has nothing pending.
@@ -173,7 +191,7 @@ class CartesiaTtsEngine @Inject constructor(
         pendingCount.incrementAndGet()
         _state.value = TtsState.Speaking
         if (cachedApiKey.isBlank()) {
-            Log.d(TAG, "No Cartesia key — falling back to Android TTS")
+            Log.d(TAG, "No Cartesia key : falling back to Android TTS")
             val remaining = pendingCount.decrementAndGet()
             if (remaining <= 0) {
                 pendingCount.set(0)
@@ -203,12 +221,20 @@ class CartesiaTtsEngine @Inject constructor(
         startWorker()
     }
 
+    @Volatile private var cachedSpeechRate = 1.0f
+
     override fun setSpeechRate(rate: Float) {
-        androidFallback.setSpeechRate(rate) // only meaningful for the Android fallback
+        cachedSpeechRate = rate.coerceIn(0.5f, 2.0f)
+        androidFallback.setSpeechRate(rate)
     }
 
     override fun setPitch(pitch: Float) {
         androidFallback.setPitch(pitch)
+    }
+
+    override fun setLanguage(languageCode: String) {
+        cachedLanguage = languageCode
+        androidFallback.setLanguage(languageCode)
     }
 
     override fun shutdown() {
@@ -257,11 +283,13 @@ class CartesiaTtsEngine @Inject constructor(
                 container  = "wav",
                 encoding   = "pcm_s16le",
                 sampleRate = SAMPLE_RATE
-            )
+            ),
+            language = cachedLanguage.takeIf { it.isNotBlank() && it != "en" }
         )
 
         val response = httpClient.post(CARTESIA_TTS_URL) {
             contentType(ContentType.Application.Json)
+            header("Authorization", "Bearer ${req.apiKey}")
             header("X-API-Key", req.apiKey)
             header("Cartesia-Version", CARTESIA_API_VERSION)
             setBody(json.encodeToString(CartesiaRequest.serializer(), body))
@@ -270,12 +298,19 @@ class CartesiaTtsEngine @Inject constructor(
         Log.d(TAG, "HTTP ${response.status.value} for '${req.text.take(30)}'")
 
         if (!response.status.isSuccess()) {
-            val errorHint = when (response.status.value) {
-                401, 403 -> "Invalid Cartesia API key — check Settings → TTS."
-                429      -> "Cartesia rate limit reached. Try again shortly."
+            val errorBody = response.bodyAsText()
+            Log.e(TAG, "Cartesia API Error status=${response.status.value}, body=$errorBody, voiceId='${req.voiceId}'")
+            val parsedMsg = try {
+                Json.parseToJsonElement(errorBody).jsonObject["message"]?.jsonPrimitive?.content
+            } catch (_: Exception) { null }
+            val errorHint = parsedMsg ?: when (response.status.value) {
+                401, 403 -> "Invalid Cartesia API key — check Settings."
+                400, 422 -> "Cartesia TTS Error: Parameter or language '$cachedLanguage' not supported."
+                404      -> "Cartesia HTTP 404 ($errorBody)"
+                429      -> "Cartesia rate limit reached."
                 else     -> "Cartesia HTTP ${response.status.value}"
             }
-            _state.value = TtsState.Error(errorHint)
+            _state.value = TtsState.Error("Cartesia TTS: $errorHint")
             return null
         }
 
@@ -290,33 +325,30 @@ class CartesiaTtsEngine @Inject constructor(
             return
         }
 
-        // Parse channel count from WAV header bytes 22–23 (little-endian)
+        // Parse channel count and sample rate from WAV header bytes 22–27 (little-endian)
         val numChannels = readShortLE(wavBytes, 22).coerceIn(1, 2)
+        val sampleRate = readIntLE(wavBytes, 24).let { if (it > 0) it else SAMPLE_RATE }
         val channelConfig = if (numChannels == 2)
             AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
 
         val pcm = wavBytes.copyOfRange(dataOffset, wavBytes.size)
-        Log.d(TAG, "Playing ${pcm.size} PCM bytes, channels=$numChannels")
+        Log.d(TAG, "Playing ${pcm.size} PCM bytes, sampleRate=$sampleRate, channels=$numChannels")
 
         val minBuf = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE, channelConfig, AudioFormat.ENCODING_PCM_16BIT
+            sampleRate, channelConfig, AudioFormat.ENCODING_PCM_16BIT
         )
 
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    // USAGE_ASSISTANT plays through the main loudspeaker at full media
-                    // volume so the user can hear the response clearly.
-                    // AEC in VAD and Deepgram's AudioRecord (VOICE_COMMUNICATION source)
-                    // still suppresses echo independently of the AudioTrack usage flag.
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE)
+                    .setSampleRate(sampleRate)
                     .setChannelMask(channelConfig)
                     .build()
             )
@@ -325,11 +357,22 @@ class CartesiaTtsEngine @Inject constructor(
             .build()
 
         activeTrack = track
+
+        val effectiveRate = cachedSpeechRate.coerceIn(0.5f, 2.0f)
+
+        if (effectiveRate != 1.0f) {
+            runCatching {
+                val params = track.playbackParams
+                params.speed = effectiveRate
+                track.playbackParams = params
+            }
+        }
+
         track.write(pcm, 0, pcm.size)
         track.play()
 
         // Duration in ms from PCM buffer size (S16LE = 2 bytes per sample per channel)
-        val durationMs = pcm.size.toLong() * 1000L / (SAMPLE_RATE.toLong() * numChannels * 2)
+        val durationMs = (pcm.size.toLong() * 1000L / (sampleRate.toLong() * numChannels * 2) / effectiveRate).toLong()
 
         try {
             delay(durationMs + 300L) // 300 ms tail guard
@@ -357,5 +400,13 @@ class CartesiaTtsEngine @Inject constructor(
     private fun readShortLE(buf: ByteArray, offset: Int): Int {
         if (offset + 1 >= buf.size) return 1
         return (buf[offset].toInt() and 0xFF) or ((buf[offset + 1].toInt() and 0xFF) shl 8)
+    }
+
+    private fun readIntLE(buf: ByteArray, offset: Int): Int {
+        if (offset + 3 >= buf.size) return 0
+        return (buf[offset].toInt() and 0xFF) or
+                ((buf[offset + 1].toInt() and 0xFF) shl 8) or
+                ((buf[offset + 2].toInt() and 0xFF) shl 16) or
+                ((buf[offset + 3].toInt() and 0xFF) shl 24)
     }
 }

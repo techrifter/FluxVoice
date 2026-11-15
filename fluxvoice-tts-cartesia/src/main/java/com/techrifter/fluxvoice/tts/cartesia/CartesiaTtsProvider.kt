@@ -41,8 +41,8 @@ private const val CARTESIA_API_VERSION = "2024-06-10"
 private const val DEFAULT_MODEL_ID = "sonic-3.6"
 private const val SAMPLE_RATE = 44100
 
-/** Cartesia's voice — natural, conversational. */
-public const val CARTESIA_VOICE: String = "638efaaa-4d0c-442e-b701-3fae16aad012"
+/** Cartesia's default voice — Skylar (natural, conversational). */
+public const val CARTESIA_VOICE: String = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
 
 private data class SpeakItem(val text: String, val utteranceId: String)
 
@@ -233,7 +233,7 @@ public class CartesiaTtsProvider(
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )

@@ -40,18 +40,21 @@ class TelemetryRepositoryImpl @Inject constructor(
         totalTurnMs: Long,
         tokens: Int,
         bargeInOccurred: Boolean,
-        pipelineName: String
+        pipelineName: String,
+        languageCode: String
     ) {
         val uid = auth.currentUser?.uid ?: return
         
         try {
             val date = getCurrentUtcDate()
+            val cleanLang = languageCode.trim()
             val sanitizedModelKey = telemetryFieldKey(llmModel)
             val sanitizedSttKey = telemetryFieldKey(sttProvider)
             val sanitizedTtsKey = telemetryFieldKey(ttsProvider)
             val sanitizedPipeKey = telemetryFieldKey(pipelineName)
+            val sanitizedLangKey = if (cleanLang.isNotBlank()) telemetryFieldKey(cleanLang) else "unknown"
             
-            val pipelineKey = "${sanitizedPipeKey}__${sanitizedSttKey}__${sanitizedModelKey}__${sanitizedTtsKey}"
+            val pipelineKey = "${sanitizedPipeKey}__${sanitizedSttKey}__${sanitizedModelKey}__${sanitizedTtsKey}__$sanitizedLangKey"
             
             val ttftBucket = getTtftBucket(ttftMs)
             val ttfaBucket = getTtfaBucket(ttfaMs)
@@ -65,6 +68,7 @@ class TelemetryRepositoryImpl @Inject constructor(
                 "sttProvider" to sttProvider,
                 "llmModel" to llmModel,
                 "ttsProvider" to ttsProvider,
+                "languageCode" to cleanLang,
                 "turns" to FieldValue.increment(1),
                 "tokens" to FieldValue.increment(tokens.toLong()),
                 "bargeIns" to FieldValue.increment(if (bargeInOccurred) 1 else 0),

@@ -132,6 +132,15 @@ class TtsEngineMux @Inject constructor(
         androidTts.setPitch(pitch)
         customTts.setPitch(pitch)
     }
+    
+    override fun setLanguage(languageCode: String) {
+        cartesia.setLanguage(languageCode)
+        elevenLabs.setLanguage(languageCode)
+        openAi.setLanguage(languageCode)
+        deepgramAura.setLanguage(languageCode)
+        androidTts.setLanguage(languageCode)
+        customTts.setLanguage(languageCode)
+    }
 
     override fun shutdown() {
         cartesia.shutdown()

@@ -41,7 +41,7 @@ interface SttEngine {
     fun preConnect() {}
 
     /** Optional config update for engines that support dynamic models and endpointing. */
-    fun updateConfig(modelId: String? = null, endpointingMs: Int? = null) {}
+    fun updateConfig(modelId: String? = null, endpointingMs: Int? = null, languageCode: String? = null) {}
 
     /** Release native resources. Call from [ViewModel.onCleared]. */
     fun destroy()

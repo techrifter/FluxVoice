@@ -24,6 +24,7 @@ data class PipelineEntity(
 
     val ttsProviderId: String,
     val ttsVoiceId: String,
+    val languageCode: String,
     val speechRate: Float,
     val pitch: Float,
 
@@ -50,6 +51,7 @@ data class PipelineEntity(
         systemPrompt = systemPrompt,
         ttsProviderId = ttsProviderId,
         ttsVoiceId = ttsVoiceId,
+        languageCode = languageCode,
         speechRate = speechRate,
         pitch = pitch,
         vadEnabled = vadEnabled,
@@ -76,6 +78,7 @@ data class PipelineEntity(
             systemPrompt = domain.systemPrompt,
             ttsProviderId = domain.ttsProviderId,
             ttsVoiceId = domain.ttsVoiceId,
+            languageCode = domain.languageCode,
             speechRate = domain.speechRate,
             pitch = domain.pitch,
             vadEnabled = domain.vadEnabled,

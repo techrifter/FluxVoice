@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -59,6 +60,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -76,6 +80,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -99,6 +104,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterModel
+import com.techrifter.fluxvoice.domain.model.AppLanguage
 import com.techrifter.fluxvoice.domain.model.AppMode
 import com.techrifter.fluxvoice.domain.model.AppSettings
 import com.techrifter.fluxvoice.domain.model.ProviderType
@@ -709,7 +715,7 @@ private fun CustomModeContent(
             if (settings.voiceMode == VoiceMode.STANDARD) {
                 SttProviderDropdown(
                     selectedProvider = settings.sttProvider,
-                    onProviderSelected = { viewModel.updateSttProvider(it.name) }
+                    onProviderSelected = { viewModel.updateSttProvider(it.id) }
                 )
                 when (settings.sttProvider) {
                     SttProvider.DEEPGRAM -> {
@@ -755,6 +761,13 @@ private fun CustomModeContent(
                 }
             }
         }
+        
+        CompactLanguageSelector(
+            selectedCode = settings.languageCode,
+            sttProviderId = settings.sttProvider.id,
+            ttsProviderId = settings.ttsProvider.id,
+            onSelectionChanged = viewModel::updateLanguageCode
+        )
 
         if (settings.voiceMode == VoiceMode.STANDARD) {
             // ── AI Provider ───────────────────────────────────────────────────────
@@ -929,13 +942,15 @@ private fun CustomModeContent(
 
         // ── Generation ────────────────────────────────────────────────────────
         SettingsSection("Generation") {
+            var tempValue by remember(settings.temperature) { mutableFloatStateOf(settings.temperature) }
             Text(
-                "Temperature: ${"%.2f".format(settings.temperature)}",
+                "Temperature: ${"%.2f".format(tempValue)}",
                 style = MaterialTheme.typography.bodyMedium
             )
             Slider(
-                value = settings.temperature,
-                onValueChange = { viewModel.updateTemperature((it * 100).roundToInt() / 100f) },
+                value = tempValue,
+                onValueChange = { tempValue = (it * 100).roundToInt() / 100f },
+                onValueChangeFinished = { viewModel.updateTemperature(tempValue) },
                 valueRange = 0f..1f,
                 steps = 9,
                 colors = customSliderColors()
@@ -957,13 +972,15 @@ private fun CustomModeContent(
 
         // ── Voice Conversation ────────────────────────────────────────────────
         SettingsSection("Voice Conversation") {
+            var contextValue by remember(settings.maxContextTurns) { mutableFloatStateOf(settings.maxContextTurns.toFloat()) }
             Text(
-                "Context window: ${settings.maxContextTurns} turns",
+                "Context window: ${contextValue.roundToInt()} turns",
                 style = MaterialTheme.typography.bodyMedium
             )
             Slider(
-                value = settings.maxContextTurns.toFloat(),
-                onValueChange = { viewModel.updateMaxContextTurns(it.roundToInt()) },
+                value = contextValue,
+                onValueChange = { contextValue = it },
+                onValueChangeFinished = { viewModel.updateMaxContextTurns(contextValue.roundToInt()) },
                 valueRange = 1f..20f,
                 steps = 18,
                 colors = customSliderColors()
@@ -995,7 +1012,7 @@ private fun CustomModeContent(
             if (settings.ttsEnabled) {
                 TtsProviderDropdown(
                     selectedProvider = settings.ttsProvider,
-                    onProviderSelected = { viewModel.updateTtsProvider(it.name) }
+                    onProviderSelected = { viewModel.updateTtsProvider(it.id) }
                 )
 
                 when (settings.ttsProvider) {
@@ -1012,7 +1029,7 @@ private fun CustomModeContent(
                             label = "Cartesia Voice ID",
                             value = settings.cartesiaVoiceId,
                             onValueChange = viewModel::updateCartesiaVoiceId,
-                            placeholder = "638efaaa-4d0c-442e-b701-3fae16aad012"
+                            placeholder = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
                         )
                         Row(
                             modifier = Modifier
@@ -1021,10 +1038,10 @@ private fun CustomModeContent(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             listOf(
-                                "Sameer (Problem Solver)" to "638efaaa-4d0c-442e-b701-3fae16aad012",
-                                "Gareth (Conversational)" to "3a01612e-07da-4a85-bba8-ce10481df477",
-                                "Harlow (Warm Support)" to "6c756032-11c3-4be8-a120-74f9673fb700",
-                                "Maren (Resourceful Guide)" to "b2e12ebd-7bed-4d48-9243-0aa7acef4140"
+                                "Skylar (Multilingual)" to "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
+                                "Daniel (Multilingual)" to "47c38ca4-5f35-497b-b1a3-415245fb35e1",
+                                "Jacqueline (Multilingual)" to "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+                                "Gemma (Multilingual)" to "62ae83ad-4f6a-430b-af41-a9bede9286ca"
                             ).forEach { (label, id) ->
                                 val isSelected = settings.cartesiaVoiceId == id
                                 FilterChip(
@@ -1071,10 +1088,10 @@ private fun CustomModeContent(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             listOf(
-                                "George" to "JBFqnCBsd6RMkjVDRZzb",
-                                "Sarah" to "EXAVITQu4vr4xnSDxMaL",
-                                "Charlie" to "IKne3meq5aSn9XLyUdCD",
-                                "Laura" to "FGY2WhTYpPnrIDTdsKH5"
+                                "George (Multilingual)" to "JBFqnCBsd6RMkjVDRZzb",
+                                "Sarah (Multilingual)" to "EXAVITQu4vr4xnSDxMaL",
+                                "Adam (Multilingual)" to "pNInz6obpgDQGcFmaJgB",
+                                "Charlotte (Multilingual)" to "XB0fDUnXU5powFXDhCwa"
                             ).forEach { (label, id) ->
                                 val isSelected = settings.cartesiaVoiceId == id
                                 FilterChip(
@@ -1184,25 +1201,15 @@ private fun CustomModeContent(
                     }
                 }
 
+                var rateValue by remember(settings.ttsSpeechRate) { mutableFloatStateOf(settings.ttsSpeechRate) }
                 Text(
-                    "Speech rate: ${"%.1f".format(settings.ttsSpeechRate)}×",
+                    "Speech rate: ${"%.1f".format(rateValue)}×",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Slider(
-                    value = settings.ttsSpeechRate,
-                    onValueChange = { viewModel.updateTtsSpeechRate((it * 10).roundToInt() / 10f) },
-                    valueRange = 0.5f..2.0f,
-                    steps = 14,
-                    enabled = settings.ttsEnabled,
-                    colors = customSliderColors()
-                )
-                Text(
-                    "Pitch: ${"%.1f".format(settings.ttsPitch)}×",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Slider(
-                    value = settings.ttsPitch,
-                    onValueChange = { viewModel.updateTtsPitch((it * 10).roundToInt() / 10f) },
+                    value = rateValue,
+                    onValueChange = { rateValue = (it * 10).roundToInt() / 10f },
+                    onValueChangeFinished = { viewModel.updateTtsSpeechRate(rateValue) },
                     valueRange = 0.5f..2.0f,
                     steps = 14,
                     enabled = settings.ttsEnabled,
@@ -1234,19 +1241,21 @@ private fun CustomModeContent(
                 )
             }
             if (settings.vadEnabled) {
+                var sensValue by remember(settings.vadSensitivity) { mutableFloatStateOf(settings.vadSensitivity.toFloat()) }
                 Text(
                     "Barge-in sensitivity: ${
                         when {
-                            settings.vadSensitivity <= 600  -> "High"
-                            settings.vadSensitivity <= 1500 -> "Medium"
-                            else                            -> "Low"
+                            sensValue <= 600  -> "High"
+                            sensValue <= 1500 -> "Medium"
+                            else              -> "Low"
                         }
                     }",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Slider(
-                    value = settings.vadSensitivity.toFloat(),
-                    onValueChange = { viewModel.updateVadSensitivity(it.roundToInt()) },
+                    value = sensValue,
+                    onValueChange = { sensValue = it },
+                    onValueChangeFinished = { viewModel.updateVadSensitivity(sensValue.roundToInt()) },
                     valueRange = 200f..3000f,
                     steps = 27,
                     colors = customSliderColors()
@@ -1411,7 +1420,7 @@ private fun CartesiaVoiceSection(settings: AppSettings, viewModel: SettingsViewM
             label = "Voice ID",
             value = settings.cartesiaVoiceId,
             onValueChange = viewModel::updateCartesiaVoiceId,
-            placeholder = "638efaaa-4d0c-442e-b701-3fae16aad012",
+            placeholder = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
             isSet = settings.cartesiaVoiceId.isNotBlank(),
             isPassword = false
         )
@@ -1775,3 +1784,97 @@ private fun ChangeIdentityDialog(
         }
     )
 }
+  
+@Composable
+private fun CompactLanguageSelector(
+    selectedCode: String,
+    sttProviderId: String = "",
+    ttsProviderId: String = "",
+    onSelectionChanged: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentLang = AppLanguage.fromCode(selectedCode)
+    val availableLanguages = remember(sttProviderId, ttsProviderId) {
+        AppLanguage.getSupportedLanguages(sttProviderId, ttsProviderId)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = ObsidianCard,
+        border = BorderStroke(1.dp, HairlineBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Spoken Language",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "STT recognition & LLM response language",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Box {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = ObsidianVoid,
+                    border = BorderStroke(1.dp, HairlineHighlight),
+                    modifier = Modifier.clickable { expanded = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = currentLang.displayName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = FluxCyan
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowDropDown,
+                            contentDescription = null,
+                            tint = FluxCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(ObsidianFloat)
+                ) {
+                    availableLanguages.forEach { lang ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = lang.displayName,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (lang.code == selectedCode) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (lang.code == selectedCode) FluxCyan else MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            onClick = {
+                                onSelectionChanged(lang.code)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+} 

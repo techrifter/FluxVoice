@@ -2,6 +2,7 @@ package com.techrifter.fluxvoice.data.conversation
 
 import android.util.Log
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.model.AppLanguage
 import com.techrifter.fluxvoice.domain.model.AuthConfig
 import com.techrifter.fluxvoice.domain.model.GenerationConfig
 import com.techrifter.fluxvoice.domain.model.Message
@@ -107,12 +108,21 @@ class ConversationRepositoryImpl @Inject constructor(
             apiKey = effectiveKey,
             baseUrl = pipeline?.customEndpointUrl?.takeIf { it.isNotBlank() } ?: settings.localLlmUrl
         )
+
+        val basePrompt = systemPromptOverride ?: pipeline?.systemPrompt ?: settings.systemPrompt
+        val effectiveLang = if (pipeline != null && !pipeline.isPreset && pipeline.languageCode.isNotBlank()) {
+            pipeline.languageCode
+        } else {
+            settings.languageCode
+        }
+        val langInstruction = AppLanguage.fromCode(effectiveLang).systemPromptInstruction
+        val finalSystemPrompt = if (basePrompt.isNotBlank()) "$basePrompt$langInstruction" else langInstruction.trim()
+
         val genConfig = GenerationConfig(
             modelId         = effectiveModelId,
             temperature     = pipeline?.temperature ?: settings.temperature,
             maxOutputTokens = pipeline?.maxOutputTokens ?: 2048,
-            // Use per-turn override (adaptive length hint) if provided, else stored prompt
-            systemPrompt    = (systemPromptOverride ?: pipeline?.systemPrompt ?: settings.systemPrompt).takeIf { it.isNotBlank() }
+            systemPrompt    = finalSystemPrompt.takeIf { it.isNotBlank() }
         )
 
         // 2. Append user turn and trim context window (guarded against duplicate on retry)

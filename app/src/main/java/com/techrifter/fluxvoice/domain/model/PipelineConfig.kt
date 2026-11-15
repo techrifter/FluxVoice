@@ -27,7 +27,8 @@ data class PipelineConfig(
 
     // ── TTS Configuration ─────────────────────────────────────────────────────
     val ttsProviderId: String = "cartesia",
-    val ttsVoiceId: String = "638efaaa-4d0c-442e-b701-3fae16aad012",
+    val ttsVoiceId: String = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
+    val languageCode: String = "en",
     val speechRate: Float = 1.0f,
     val pitch: Float = 1.0f,
 

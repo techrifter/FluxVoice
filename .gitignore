@@ -1,6 +1,7 @@
 build/
 **/build/
 .gradle/
+.gradle-user/
 gradle/wrapper/gradle-wrapper.jar
 local.properties
 *.iml

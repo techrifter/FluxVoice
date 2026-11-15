@@ -12,7 +12,7 @@ enum class TtsProvider(
     CARTESIA(
         id = "cartesia",
         displayName = "Cartesia Sonic",
-        defaultVoiceId = "638efaaa-4d0c-442e-b701-3fae16aad012"
+        defaultVoiceId = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
     ),
     ELEVENLABS(
         id = "elevenlabs",

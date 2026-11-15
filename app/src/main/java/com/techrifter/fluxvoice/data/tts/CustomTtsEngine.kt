@@ -39,7 +39,8 @@ private data class CustomTtsRequestBody(
     val model: String = "default",
     val input: String,
     val voice: String = "default",
-    val response_format: String = "pcm"
+    val response_format: String = "pcm",
+    val language: String = "en"
 )
 
 private data class CustomSpeakRequest(
@@ -74,6 +75,7 @@ class CustomTtsEngine @Inject constructor(
     @Volatile var activeApiKey: String = ""
     @Volatile var activeModelId: String = "default"
     @Volatile var activeVoiceId: String = "default"
+    @Volatile private var cachedLanguage = "en"
 
     init {
         startWorker()
@@ -96,7 +98,7 @@ class CustomTtsEngine @Inject constructor(
         _state.value = TtsState.Speaking
 
         if (endpoint.isBlank()) {
-            Log.d(TAG, "No Custom TTS endpoint specified — delegating to Android TTS")
+            Log.d(TAG, "No Custom TTS endpoint specified : delegating to Android TTS")
             val remaining = pendingCount.decrementAndGet()
             if (remaining <= 0) {
                 pendingCount.set(0)
@@ -130,12 +132,20 @@ class CustomTtsEngine @Inject constructor(
         startWorker()
     }
 
+    @Volatile private var cachedSpeechRate = 1.0f
+
     override fun setSpeechRate(rate: Float) {
+        cachedSpeechRate = rate.coerceIn(0.5f, 2.0f)
         androidFallback.setSpeechRate(rate)
     }
 
     override fun setPitch(pitch: Float) {
         androidFallback.setPitch(pitch)
+    }
+
+    override fun setLanguage(languageCode: String) {
+        cachedLanguage = languageCode
+        androidFallback.setLanguage(languageCode)
     }
 
     override fun shutdown() {
@@ -148,7 +158,7 @@ class CustomTtsEngine @Inject constructor(
         try {
             Log.d(TAG, "Custom TTS synthesizing on ${req.endpointUrl}")
             val audioBytes = callCustomApi(req) ?: return
-            audioPlayer.playWav(audioBytes, defaultSampleRate = SAMPLE_RATE)
+            audioPlayer.playWav(audioBytes, defaultSampleRate = SAMPLE_RATE, speechRate = cachedSpeechRate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -177,7 +187,8 @@ class CustomTtsEngine @Inject constructor(
         val payload = CustomTtsRequestBody(
             model = req.model,
             input = req.text,
-            voice = req.voice
+            voice = req.voice,
+            language = cachedLanguage
         )
 
         val response = httpClient.post(normalizedUrl) {

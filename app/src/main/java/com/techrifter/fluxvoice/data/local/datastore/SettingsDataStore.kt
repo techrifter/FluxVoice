@@ -49,6 +49,8 @@ class SettingsDataStore @Inject constructor(
         val DEEPGRAM_API_KEY      = stringPreferencesKey("deepgram_api_key")
         // ── Voice Conversation ────────────────────────────────────────────────
         val MAX_CONTEXT_TURNS     = intPreferencesKey("max_context_turns")
+        // ── Global Language ───────────────────────────────────────────────────
+        val LANGUAGE_CODE         = stringPreferencesKey("language_code")
         // ── Text-to-Speech ────────────────────────────────────────────────────
         val TTS_ENABLED           = booleanPreferencesKey("tts_enabled")
         val TTS_PROVIDER          = stringPreferencesKey("tts_provider")
@@ -77,12 +79,10 @@ class SettingsDataStore @Inject constructor(
             ?: VoiceMode.STANDARD
         val elevenLabsAgentId = prefs[ELEVENLABS_AGENT_ID] ?: ""
         val voiceMode = voiceModeRaw
-        val sttProviderName = prefs[STT_PROVIDER] ?: SttProvider.DEEPGRAM.name
-        val sttProvider   = SttProvider.entries.firstOrNull { it.name == sttProviderName }
-            ?: SttProvider.DEEPGRAM
-        val ttsProviderName = prefs[TTS_PROVIDER] ?: TtsProvider.CARTESIA.name
-        val ttsProvider   = TtsProvider.entries.firstOrNull { it.name.equals(ttsProviderName, ignoreCase = true) || it.id.equals(ttsProviderName, ignoreCase = true) }
-            ?: TtsProvider.CARTESIA
+        val sttProviderName = prefs[STT_PROVIDER] ?: SttProvider.DEEPGRAM.id
+        val sttProvider   = SttProvider.fromId(sttProviderName)
+        val ttsProviderName = prefs[TTS_PROVIDER] ?: TtsProvider.CARTESIA.id
+        val ttsProvider   = TtsProvider.fromId(ttsProviderName)
         AppSettings(
             appMode           = appMode,
             voiceMode         = voiceMode,
@@ -100,6 +100,7 @@ class SettingsDataStore @Inject constructor(
             elevenLabsApiKey  = keyVault.getElevenLabsKey(),
             deepgramApiKey    = keyVault.getDeepgramKey(),
             maxContextTurns   = prefs[MAX_CONTEXT_TURNS]   ?: 10,
+            languageCode      = prefs[LANGUAGE_CODE]       ?: "en",
             ttsEnabled        = prefs[TTS_ENABLED]         ?: true,
             ttsProvider       = ttsProvider,
             ttsSpeechRate     = prefs[TTS_SPEECH_RATE]     ?: 1.0f,

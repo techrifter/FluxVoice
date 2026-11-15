@@ -73,6 +73,12 @@ class GroqWhisperSttEngine @Inject constructor(
         recordingJob = scope.launch { captureAndTranscribe() }
     }
 
+    @Volatile private var currentLanguage: String = "en"
+
+    override fun updateConfig(modelId: String?, endpointingMs: Int?, languageCode: String?) {
+        languageCode?.let { currentLanguage = it }
+    }
+
     override fun stopListening() {
         isRecording = false
     }
@@ -162,7 +168,7 @@ class GroqWhisperSttEngine @Inject constructor(
                                 }
                             )
                             append("model", "whisper-large-v3-turbo")
-                            append("language", "en")
+                            append("language", currentLanguage)
                             append("response_format", "json")
                         }
                     )

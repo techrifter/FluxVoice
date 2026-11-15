@@ -36,6 +36,9 @@ data class AppSettings(
     // ── Voice Conversation ────────────────────────────────────────────────────
     val maxContextTurns: Int = 10,
 
+    // ── Global Language ───────────────────────────────────────────────────────
+    val languageCode: String = "en",
+
     // ── Text-to-Speech ────────────────────────────────────────────────────────
     val ttsEnabled: Boolean = true,
     val ttsProvider: TtsProvider = TtsProvider.CARTESIA,
@@ -51,11 +54,11 @@ data class AppSettings(
     /** Auto barge-in: stop AI speech when mic detects user voice while TTS plays. */
     val vadEnabled: Boolean = true,
     /**
-     * Barge-in sensitivity (200–3000). Lower = more sensitive.
+     * Barge-in sensitivity (200-3000). Lower = more sensitive.
      * Mapped to the WebRTC VAD aggressiveness mode:
-     *   ≤ 600  → NORMAL (High)   — permissive, quick to trigger
-     *   ≤ 1500 → AGGRESSIVE (Medium) — default
-     *   > 1500 → VERY_AGGRESSIVE (Low) — strict, best for noisy environments
+     *   <= 600  -> NORMAL (High)   : permissive, quick to trigger
+     *   <= 1500 -> AGGRESSIVE (Medium) : default
+     *   > 1500 -> VERY_AGGRESSIVE (Low) : strict, best for noisy environments
      */
     val vadSensitivity: Int = 1_000,
     /** Speak a short acknowledgment ("Got it.", "Sure."…) immediately after STT. */

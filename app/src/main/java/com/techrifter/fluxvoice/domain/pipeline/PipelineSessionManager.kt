@@ -1,6 +1,7 @@
 package com.techrifter.fluxvoice.domain.pipeline
 
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.model.AppLanguage
 import com.techrifter.fluxvoice.domain.model.AppSettings
 import com.techrifter.fluxvoice.domain.model.PipelineConfig
 import com.techrifter.fluxvoice.domain.model.ProviderType
@@ -20,6 +21,17 @@ import javax.inject.Singleton
 
 sealed class PipelineReadiness {
     data object Ready : PipelineReadiness()
+    
+    data class UnsupportedLanguage(
+        val providerName: String,
+        val languageName: String,
+        val supportedAlternatives: String = "Cartesia, ElevenLabs, OpenAI, or Android TTS"
+    ) : PipelineReadiness() {
+        fun formatErrorMessage(): String {
+            return "$providerName does not support $languageName. Please choose $supportedAlternatives."
+        }
+    }
+
     data class MissingCredentials(val providerNames: List<String>) : PipelineReadiness() {
         fun formatErrorMessage(destination: String = "Settings"): String {
             val keyWord = if (providerNames.size > 1) "keys" else "key"
@@ -124,6 +136,39 @@ class PipelineSessionManager @Inject constructor(
             "android" -> { /* Built-in on-device offline, always ready */ }
         }
 
+        val effectiveLang = if (!pipeline.isPreset && pipeline.languageCode.isNotBlank()) {
+            pipeline.languageCode
+        } else {
+            cachedSettings.languageCode
+        }
+
+        val langObj = AppLanguage.fromCode(effectiveLang)
+        
+        // 1. TTS language support validation
+        if (!langObj.code.equals("en", ignoreCase = true)) {
+            val ttsId = pipeline.ttsProviderId.lowercase()
+            if (ttsId == "deepgram" || ttsId == "deepgram_aura") {
+                return PipelineReadiness.UnsupportedLanguage(
+                    providerName = "Deepgram Aura TTS",
+                    languageName = langObj.displayName,
+                    supportedAlternatives = "Cartesia, ElevenLabs, OpenAI, or Android TTS"
+                )
+            }
+        }
+
+        // 2. STT language support validation for Deepgram Streaming
+        val sttId = pipeline.sttProviderId.lowercase()
+        if (sttId == "deepgram") {
+            val supportedDeepgramLangs = setOf("en", "hi", "es", "fr", "de", "pt", "ja")
+            if (langObj.code.lowercase() !in supportedDeepgramLangs) {
+                return PipelineReadiness.UnsupportedLanguage(
+                    providerName = "Deepgram Streaming STT",
+                    languageName = langObj.displayName,
+                    supportedAlternatives = "Groq Whisper Turbo or OpenAI Whisper"
+                )
+            }
+        }
+
         return if (missing.isEmpty()) {
             PipelineReadiness.Ready
         } else {
@@ -178,7 +223,12 @@ class PipelineSessionManager @Inject constructor(
         settingsRepository.updateTtsSpeechRate(pipeline.speechRate)
         settingsRepository.updateTtsPitch(pipeline.pitch)
 
-        // 4. VAD & Conversational UX
+        // 4. Global Language
+        if (!pipeline.isPreset && pipeline.languageCode.isNotBlank()) {
+            settingsRepository.updateLanguageCode(pipeline.languageCode)
+        }
+
+        // 5. VAD & Conversational UX
         settingsRepository.updateVadEnabled(pipeline.vadEnabled)
         settingsRepository.updateVadSensitivity(pipeline.vadSensitivity)
         settingsRepository.updateBackchannelEnabled(pipeline.backchannelEnabled)
