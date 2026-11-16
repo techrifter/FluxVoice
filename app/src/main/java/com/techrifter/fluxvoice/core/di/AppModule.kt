@@ -6,6 +6,8 @@ import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.techrifter.fluxvoice.core.util.DefaultDispatcherProvider
 import com.techrifter.fluxvoice.core.util.DispatcherProvider
 import com.techrifter.fluxvoice.data.conversation.ConversationRepositoryImpl
@@ -18,7 +20,9 @@ import com.techrifter.fluxvoice.data.security.KeyVault
 import com.techrifter.fluxvoice.domain.repository.ConversationRepository
 import com.techrifter.fluxvoice.domain.repository.PipelineRepository
 import com.techrifter.fluxvoice.domain.repository.SettingsRepository
+import com.techrifter.fluxvoice.domain.repository.TelemetryRepository
 import com.techrifter.fluxvoice.domain.repository.TurnBenchmarkRepository
+import com.techrifter.fluxvoice.data.telemetry.TelemetryRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -42,6 +46,14 @@ abstract class AppModule {
                 migrations = listOf(LegacyApiKeyMigration(keyVault)),
                 produceFile = { context.preferencesDataStoreFile("settings") }
             )
+
+        @Provides
+        @Singleton
+        fun provideFirebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
+
+        @Provides
+        @Singleton
+        fun provideFirebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
     }
 
     @Binds
@@ -67,6 +79,10 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindTurnBenchmarkRepository(impl: TurnBenchmarkRepositoryImpl): TurnBenchmarkRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTelemetryRepository(impl: TelemetryRepositoryImpl): TelemetryRepository
 }
 
 private class LegacyApiKeyMigration(

@@ -52,8 +52,10 @@ class LocalLlmProvider @Inject constructor(
         channel.send(StreamEvent.Start)
 
         try {
-            val baseUrl = authConfig.baseUrl.takeIf { it.isNotBlank() }
-                ?: "http://localhost:11434"
+            val rawUrl = authConfig.baseUrl.takeIf { it.isNotBlank() } ?: "http://192.168.1.X:11434"
+            // Ensure if users mistakenly leave "localhost", it attempts emulator loopback as a fallback
+            val baseUrl = rawUrl.replace("localhost", "10.0.2.2").replace("127.0.0.1", "10.0.2.2")
+            
             val request = buildRequest(messages, config)
 
             val response = httpClient.post("$baseUrl/api/chat") {

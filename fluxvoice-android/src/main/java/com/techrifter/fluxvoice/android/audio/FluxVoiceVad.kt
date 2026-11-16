@@ -26,9 +26,9 @@ internal class FluxVoiceVad(private val audioCapture: FluxVoiceAudioCapture) {
         private const val FRAME_SAMPLES = 160       // 10 ms at 16 kHz
         private const val FRAME_BYTES   = FRAME_SAMPLES * 2  // PCM S16LE
 
-        private const val SPEECH_MS_HIGH   = 100   // ≤ 600  sensitivity (AGGRESSIVE mode)
-        private const val SPEECH_MS_MEDIUM = 150   // ≤ 1500 sensitivity
-        private const val SPEECH_MS_LOW    = 300   // > 1500 sensitivity (noisiest environments)
+        private const val SPEECH_MS_HIGH   = 200   // ≤ 600  sensitivity (200ms)
+        private const val SPEECH_MS_MEDIUM = 250   // ≤ 1500 sensitivity (250ms default)
+        private const val SPEECH_MS_LOW    = 350   // > 1500 sensitivity (350ms strict/noisy)
     }
 
     @Volatile var isRunning: Boolean = false

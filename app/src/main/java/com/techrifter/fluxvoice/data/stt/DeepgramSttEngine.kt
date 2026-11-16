@@ -45,15 +45,13 @@ private const val MAX_RECONNECTS = 2
 /** Discard pre-warm sockets older than this — Deepgram closes idle connections ~30 s. */
 private const val PRE_WARM_MAX_AGE_MS = 25_000L
 
-private const val DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen" +
-    "?model=nova-3" +
-    "&language=en" +
+private const val DEEPGRAM_BASE_URL = "wss://api.deepgram.com/v1/listen" +
+    "?language=en" +
     "&encoding=linear16" +
     "&sample_rate=${SharedAudioCapture.SAMPLE_RATE}" +
     "&channels=1" +
     "&interim_results=true" +
     "&smart_format=true" +
-    "&endpointing=500" +
     "&utterance_end_ms=1500"
 
 /**
@@ -81,6 +79,9 @@ class DeepgramSttEngine @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var recordingJob: Job? = null
+
+    @Volatile private var currentModelId: String = "nova-3"
+    @Volatile private var currentEndpointingMs: Int = 500
 
     @Volatile private var isRecording   = false
     @Volatile private var activeSocket: WebSocket? = null
@@ -118,6 +119,15 @@ class DeepgramSttEngine @Inject constructor(
     private val okClient = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
+
+    override fun updateConfig(modelId: String?, endpointingMs: Int?) {
+        if (modelId != null) currentModelId = modelId
+        if (endpointingMs != null) currentEndpointingMs = endpointingMs
+    }
+
+    private fun buildUrl(): String {
+        return "$DEEPGRAM_BASE_URL&model=$currentModelId&endpointing=$currentEndpointingMs"
+    }
 
     // ── Pre-warm state ────────────────────────────────────────────────────────
     // A pre-warmed WebSocket is opened during the AI's THINKING/SPEAKING phase so
@@ -238,7 +248,7 @@ class DeepgramSttEngine @Inject constructor(
                 }
                 if (apiKey.isBlank()) return@launch
                 val request = Request.Builder()
-                    .url(DEEPGRAM_URL)
+                    .url(buildUrl())
                     .header("Authorization", "Token $apiKey")
                     .build()
                 val delegatingListener = DelegatingListener()
@@ -334,8 +344,9 @@ class DeepgramSttEngine @Inject constructor(
                     return
                 }
                 if (_state.value !is SttState.FinalResult) {
+                    val codeStr = response?.code?.let { " HTTP $it" } ?: ""
                     _state.value = SttState.Error(
-                        "Couldn't connect to speech service. Check your internet connection."
+                        "Deepgram error: ${t.message ?: "network failure"}$codeStr"
                     )
                 }
             }
@@ -392,7 +403,7 @@ class DeepgramSttEngine @Inject constructor(
             // Pre-warm wasn't ready or is too old; open a fresh connection.
             preSocket?.cancel()
             val request = Request.Builder()
-                .url(DEEPGRAM_URL)
+                .url(buildUrl())
                 .header("Authorization", "Token $apiKey")
                 .build()
             okClient.newWebSocket(request, sessionListener)
@@ -405,7 +416,7 @@ class DeepgramSttEngine @Inject constructor(
         } catch (e: Exception) {
             if (sessionId == myId) {
                 _state.value = SttState.Error(
-                    "Couldn't connect to speech service. Check your internet connection."
+                    "Deepgram connection failed: ${e.message ?: "unknown"}"
                 )
             }
             ws.cancel()

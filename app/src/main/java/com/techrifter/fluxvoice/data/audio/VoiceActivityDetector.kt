@@ -47,11 +47,11 @@ class VoiceActivityDetector @Inject constructor(
         private const val FRAME_BYTES   = FRAME_SAMPLES * 2  // PCM S16LE
 
         // Consecutive speech required per sensitivity tier before barge-in fires.
-        // Fan / HVAC noise rarely sustains 150 ms of consecutive VERY_AGGRESSIVE
-        // positives — this is the primary fan-false-trigger defence.
-        private const val SPEECH_MS_HIGH   = 100  // High  (≤ 600)  — AGGRESSIVE mode
-        private const val SPEECH_MS_MEDIUM = 150  // Medium (≤ 1500) — VERY_AGGRESSIVE
-        private const val SPEECH_MS_LOW    = 300  // Low   (> 1500)  — VERY_AGGRESSIVE
+        // Industry standards (LiveKit / Silero / Vapi): 250ms is the sweet spot
+        // to prevent false positives from breaths/clicks while keeping speech instant.
+        private const val SPEECH_MS_HIGH   = 200  // High  (≤ 600)  — 200ms
+        private const val SPEECH_MS_MEDIUM = 250  // Medium (≤ 1500) — 250ms (Industry Default)
+        private const val SPEECH_MS_LOW    = 350  // Low   (> 1500)  — 350ms (Strict/Noisy)
     }
 
     @Volatile var isRunning: Boolean = false

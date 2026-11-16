@@ -17,6 +17,7 @@ import com.techrifter.fluxvoice.core.state.VoiceState
 import com.techrifter.fluxvoice.core.streaming.StreamEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+        import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -81,6 +82,8 @@ public class FluxVoiceEngine(
     private var streamingJob:   Job? = null
     private var backchannelJob: Job? = null
     private var noSpeechJob:    Job? = null
+    // Job to handle VAD re-arming delay
+    private var vadArmJob:      Job? = null
 
     @Volatile private var isStreamingComplete  = false
     @Volatile private var isBackchannelPhase   = false
@@ -260,15 +263,22 @@ public class FluxVoiceEngine(
                         // Hard mutual-exclusion: mic must be OFF while TTS plays.
                         stt?.stopListening()
                         // Arm VAD so the user can interrupt without tapping.
-                        // VAD false-positives during backchannel phase are suppressed in triggerBargeIn.
                         if (config.vadEnabled && !vad.isRunning) {
-                            vad.start(threshold = config.vadSensitivity) {
-                                Log.d(TAG, "VAD: auto barge-in triggered")
-                                scope.launch { triggerBargeIn(fromVad = true) }
+                            vadArmJob?.cancel()
+                            vadArmJob = scope.launch {
+                                // AEC grace period: allow AEC to converge and trailing noises to dissipate
+                                delay(600)
+                                if (_state.value.voiceState == VoiceState.SPEAKING) {
+                                    vad.start(threshold = config.vadSensitivity) {
+                                        Log.d(TAG, "VAD: auto barge-in triggered")
+                                        scope.launch { triggerBargeIn(fromVad = true) }
+                                    }
+                                }
                             }
                         }
                     }
                     TtsState.Idle -> {
+                        vadArmJob?.cancel()
                         vad.stop()
                         if (_state.value.voiceState == VoiceState.SPEAKING) {
                             val jobDone = streamingJob?.isCompleted == true
@@ -280,6 +290,7 @@ public class FluxVoiceEngine(
                         }
                     }
                     is TtsState.Error -> {
+                        vadArmJob?.cancel()
                         vad.stop()
                         config.onError?.invoke(RuntimeException(ttsState.message))
                         val jobDone = streamingJob?.isCompleted == true
@@ -308,14 +319,21 @@ public class FluxVoiceEngine(
         if (fromVad && isBackchannelPhase) {
             Log.d(TAG, "VAD: false-positive suppressed during backchannel phase")
             if (config.vadEnabled) {
-                vad.start(threshold = config.vadSensitivity) {
-                    scope.launch { triggerBargeIn(fromVad = true) }
+                vadArmJob?.cancel()
+                vadArmJob = scope.launch {
+                    delay(600)
+                    if (_state.value.voiceState == VoiceState.SPEAKING) {
+                        vad.start(threshold = config.vadSensitivity) {
+                            scope.launch { triggerBargeIn(fromVad = true) }
+                        }
+                    }
                 }
             }
             return
         }
         backchannelJob?.cancel(); backchannelJob = null
         streamingJob?.cancel()
+        vadArmJob?.cancel()
         tts?.stop()
         vad.stop()
         bargeInRealtime = SystemClock.elapsedRealtime()
@@ -458,8 +476,14 @@ public class FluxVoiceEngine(
                                     tts.state.value == TtsState.Speaking
                                 ) {
                                     Log.d(TAG, "VAD: re-arming after backchannel ended")
-                                    vad.start(threshold = config.vadSensitivity) {
-                                        scope.launch { triggerBargeIn(fromVad = true) }
+                                    vadArmJob?.cancel()
+                                    vadArmJob = scope.launch {
+                                        delay(600)
+                                        if (_state.value.voiceState == VoiceState.SPEAKING) {
+                                            vad.start(threshold = config.vadSensitivity) {
+                                                scope.launch { triggerBargeIn(fromVad = true) }
+                                            }
+                                        }
                                     }
                                 }
                             }

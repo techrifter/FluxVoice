@@ -40,10 +40,8 @@ class SttEngineMux @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Currently selected provider — hot StateFlow. */
-    private val provider: StateFlow<SttProvider> = settingsDataStore.settings
-        .map { it.sttProvider }
-        .stateIn(scope, SharingStarted.Eagerly, SttProvider.DEEPGRAM)
+    private val _activeProvider = MutableStateFlow(SttProvider.DEEPGRAM)
+    val activeProvider: StateFlow<SttProvider> = _activeProvider.asStateFlow()
 
     /**
      * Forwards from the active engine using [flatMapLatest]:
@@ -55,16 +53,21 @@ class SttEngineMux @Inject constructor(
     init {
         scope.launch {
             pipelineSessionManager.observeActivePipeline().collect { pipeline ->
-                if (pipeline != null && pipeline.sttProviderId.lowercase() == "custom") {
-                    customStt.activeEndpointUrl = pipeline.customEndpointUrl
-                    customStt.activeModelId = pipeline.sttModelId.ifBlank { "whisper-1" }
+                if (pipeline != null) {
+                    val provider = SttProvider.fromId(pipeline.sttProviderId)
+                    _activeProvider.value = provider
+                    
+                    if (provider == SttProvider.CUSTOM) {
+                        customStt.activeEndpointUrl = pipeline.customEndpointUrl
+                        customStt.activeModelId = pipeline.sttModelId.ifBlank { "whisper-1" }
+                    }
                 }
             }
         }
 
         scope.launch {
             @OptIn(ExperimentalCoroutinesApi::class)
-            provider.flatMapLatest { p ->
+            _activeProvider.flatMapLatest { p ->
                 when (p) {
                     SttProvider.WHISPER      -> whisper.state
                     SttProvider.DEEPGRAM     -> deepgram.state
@@ -81,6 +84,11 @@ class SttEngineMux @Inject constructor(
     override fun stopListening()  = activeEngine().stopListening()
     override fun preConnect()     = activeEngine().preConnect()
 
+    override fun updateConfig(modelId: String?, endpointingMs: Int?) {
+        deepgram.updateConfig(modelId, endpointingMs)
+        // other engines can receive this as well if they support it
+    }
+
     override fun destroy() {
         whisper.destroy()
         deepgram.destroy()
@@ -88,7 +96,7 @@ class SttEngineMux @Inject constructor(
         customStt.destroy()
     }
 
-    private fun activeEngine(): SttEngine = when (provider.value) {
+    private fun activeEngine(): SttEngine = when (_activeProvider.value) {
         SttProvider.WHISPER      -> whisper
         SttProvider.DEEPGRAM     -> deepgram
         SttProvider.GROQ_WHISPER -> groqWhisper
