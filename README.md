@@ -167,6 +167,14 @@ Track exact millisecond metrics for every single conversation turn:
 
 All commercial API keys entered in the workbench are encrypted directly on-device with **AES-256 GCM** keys stored in the **Android Keystore hardware security module**. Zero plaintext storage on disk. Zero audio or transcript recording to remote servers.
 
+### 6. 🌐 Extensible Multi-Language Voice Architecture
+
+FluxVoice includes a built-in, type-safe multi-language engine (`AppLanguage`) supporting 11 global & regional languages:
+- **Languages**: English, Hindi (हिन्दी), Bengali (বাংলা), Telugu (తెలుగు), Marathi (मराठी), Tamil (தமிழ்), Urdu (اردو), Gujarati (ગુજરાતી), French (Français), Spanish (Español), German (Deutsch).
+- **Per-Pipeline Override**: Set primary language globally in Settings or override per custom stack in Pipeline Studio.
+- **Provider-Level Readiness Validation**: Pre-flight validation (`PipelineSessionManager.checkReadiness`) detects unsupported provider/language combinations (e.g. English-only Deepgram Aura TTS) and alerts the user upfront.
+- **Transparent Remote Error Surfacing**: API error JSON responses (HTTP 400, 422, rate limits) are parsed and displayed directly on the UI banner.
+
 ---
 
 ## 🧩 Which Module Do I Need?
@@ -436,6 +444,7 @@ val controller = rememberFluxVoice(mode) {
 
     // ── Pipeline Tuning ────────────────────────────────────────────────────
     systemPrompt       = "You are Flux, an intelligent voice AI assistant. Deliver high-signal, direct answers tailored for spoken audio without pleasantry filler, markdown, or lists."
+    languageCode       = "en"       // "en", "hi", "bn", "te", "mr", "ta", "ur", "gu", "fr", "es", "de"
     temperature        = 0.7f       // 0.0 to 2.0 (creativity)
     maxOutputTokens    = 2048       // Generation ceiling
     maxContextTurns    = 10         // Sliding memory window

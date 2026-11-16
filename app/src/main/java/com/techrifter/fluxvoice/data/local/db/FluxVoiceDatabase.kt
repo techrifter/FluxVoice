@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
         PipelineEntity::class,
         TurnBenchmarkEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class FluxVoiceDatabase : RoomDatabase() {

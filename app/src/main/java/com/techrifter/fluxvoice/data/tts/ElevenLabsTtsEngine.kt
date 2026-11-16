@@ -2,6 +2,7 @@ package com.techrifter.fluxvoice.data.tts
 
 import android.util.Log
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.repository.SettingsRepository
 import com.techrifter.fluxvoice.domain.tts.TtsEngine
 import com.techrifter.fluxvoice.domain.tts.TtsState
 import io.ktor.client.HttpClient
@@ -9,6 +10,9 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsText
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -54,6 +58,7 @@ private data class ElevenLabsSpeakRequest(
 class ElevenLabsTtsEngine @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json,
+    private val settingsRepository: SettingsRepository,
     private val keyVault: KeyVault,
     private val androidFallback: AndroidTtsEngine
 ) : TtsEngine {
@@ -70,12 +75,18 @@ class ElevenLabsTtsEngine @Inject constructor(
     private var idleDebounceJob: Job? = null
 
     @Volatile var activeVoiceId: String = DEFAULT_ELEVENLABS_VOICE_ID
+    @Volatile private var cachedVoiceId = DEFAULT_ELEVENLABS_VOICE_ID
 
     init {
         startWorker()
         engineScope.launch {
+            settingsRepository.getSettings().collect { s ->
+                cachedVoiceId = s.cartesiaVoiceId.ifBlank { activeVoiceId.ifBlank { DEFAULT_ELEVENLABS_VOICE_ID } }
+            }
+        }
+        engineScope.launch {
             androidFallback.state.collect { s ->
-                if (pendingCount.get() == 0 && keyVault.getElevenLabsKey().isBlank()) {
+                if (pendingCount.get() == 0) {
                     _state.value = s
                 }
             }
@@ -98,7 +109,7 @@ class ElevenLabsTtsEngine @Inject constructor(
         _state.value = TtsState.Speaking
 
         if (key.isBlank()) {
-            Log.d(TAG, "No ElevenLabs key — delegating to Android TTS")
+            Log.d(TAG, "No ElevenLabs key : delegating to Android TTS")
             val remaining = pendingCount.decrementAndGet()
             if (remaining <= 0) {
                 pendingCount.set(0)
@@ -108,7 +119,7 @@ class ElevenLabsTtsEngine @Inject constructor(
             return
         }
 
-        speakChannel.trySend(ElevenLabsSpeakRequest(text, utteranceId, key, activeVoiceId.ifBlank { DEFAULT_ELEVENLABS_VOICE_ID }))
+        speakChannel.trySend(ElevenLabsSpeakRequest(text, utteranceId, key, cachedVoiceId))
     }
 
     override fun stop() {
@@ -123,12 +134,19 @@ class ElevenLabsTtsEngine @Inject constructor(
         startWorker()
     }
 
+    @Volatile private var cachedSpeechRate = 1.0f
+
     override fun setSpeechRate(rate: Float) {
+        cachedSpeechRate = rate.coerceIn(0.5f, 2.0f)
         androidFallback.setSpeechRate(rate)
     }
 
     override fun setPitch(pitch: Float) {
         androidFallback.setPitch(pitch)
+    }
+
+    override fun setLanguage(languageCode: String) {
+        androidFallback.setLanguage(languageCode)
     }
 
     override fun shutdown() {
@@ -141,7 +159,7 @@ class ElevenLabsTtsEngine @Inject constructor(
         try {
             Log.d(TAG, "ElevenLabs synthesizing '${req.text.take(50)}'")
             val pcmBytes = callElevenLabsApi(req) ?: return
-            audioPlayer.playPcm(pcmBytes, sampleRate = SAMPLE_RATE, numChannels = 1)
+            audioPlayer.playPcm(pcmBytes, sampleRate = SAMPLE_RATE, numChannels = 1, speechRate = cachedSpeechRate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -171,13 +189,20 @@ class ElevenLabsTtsEngine @Inject constructor(
         }
 
         if (!response.status.isSuccess()) {
+            val errorBody = response.bodyAsText()
+            val parsedMsg = try {
+                val jsonObj = json.parseToJsonElement(errorBody).jsonObject
+                jsonObj["detail"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+                    ?: jsonObj["message"]?.jsonPrimitive?.content
+            } catch (_: Exception) { null }
             val status = response.status.value
-            val hint = when (status) {
-                401 -> "Invalid ElevenLabs API key. Check Key Vault."
-                429 -> "ElevenLabs quota/rate limit reached."
+            val hint = parsedMsg ?: when (status) {
+                401 -> "Invalid ElevenLabs API key — check Settings."
+                400, 422 -> "ElevenLabs TTS Error: Invalid request or unsupported text."
+                429 -> "ElevenLabs quota or rate limit reached."
                 else -> "ElevenLabs HTTP $status"
             }
-            _state.value = TtsState.Error(hint)
+            _state.value = TtsState.Error("ElevenLabs TTS: $hint")
             return null
         }
 

@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.net.HttpURLConnection
+import java.net.URL
 
 class CartesiaTtsProviderTest {
 
@@ -92,4 +94,5 @@ class CartesiaTtsProviderTest {
         assertEquals(1.15f, custom.getPitchForTesting(), 0.001f)
     }
 }
+
 

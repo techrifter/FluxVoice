@@ -347,9 +347,7 @@ class ElevenLabsVoiceSession @Inject constructor(
             audioTrack = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        // USAGE_ASSISTANT routes audio through the main loudspeaker at full media
-                        // volume rather than the quiet ear receiver speaker used by VOICE_COMMUNICATION.
-                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )

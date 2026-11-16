@@ -7,6 +7,7 @@ import com.techrifter.fluxvoice.data.local.db.DefaultPipelines
 import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterModel
 import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterModelService
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.model.AppLanguage
 import com.techrifter.fluxvoice.domain.model.AppMode
 import com.techrifter.fluxvoice.domain.model.PipelineConfig
 import com.techrifter.fluxvoice.domain.model.ProviderType
@@ -160,6 +161,7 @@ class SettingsViewModel @Inject constructor(
             sttProviderId = when (current.sttProvider) {
                 SttProvider.GROQ_WHISPER -> "groq_whisper"
                 SttProvider.WHISPER -> "whisper"
+                SttProvider.CUSTOM -> "custom"
                 else -> "deepgram"
             },
             sttModelId = when (current.sttProvider) {
@@ -184,6 +186,7 @@ class SettingsViewModel @Inject constructor(
             ttsVoiceId = current.cartesiaVoiceId.ifBlank { current.ttsProvider.defaultVoiceId },
             speechRate = current.ttsSpeechRate,
             pitch = current.ttsPitch,
+            languageCode = current.languageCode,
             vadEnabled = current.vadEnabled,
             vadSensitivity = current.vadSensitivity,
             backchannelEnabled = current.backchannelEnabled
@@ -199,7 +202,21 @@ class SettingsViewModel @Inject constructor(
     fun updateVoiceMode(value: String)       = viewModelScope.launch { settingsRepository.updateVoiceMode(value) }
 
     // ── STT Provider ──────────────────────────────────────────────────────────
-    fun updateSttProvider(value: String)     = viewModelScope.launch { settingsRepository.updateSttProvider(value) }
+    fun updateSttProvider(value: String)     = viewModelScope.launch {
+        settingsRepository.updateSttProvider(value)
+        val resolvedSttId = SttProvider.fromId(value).id
+        validateAndResetLanguageIfNeeded(sttProviderId = resolvedSttId, ttsProviderId = uiState.value.settings.ttsProvider.id)
+    }
+
+    private suspend fun validateAndResetLanguageIfNeeded(sttProviderId: String, ttsProviderId: String) {
+        val currentLang = uiState.value.settings.languageCode
+        val resolvedStt = SttProvider.fromId(sttProviderId).id
+        val resolvedTts = TtsProvider.fromId(ttsProviderId).id
+        val supported = AppLanguage.getSupportedLanguages(resolvedStt, resolvedTts).map { it.code }
+        if (currentLang.lowercase() !in supported) {
+            settingsRepository.updateLanguageCode("en")
+        }
+    }
 
     // ── AI Provider ───────────────────────────────────────────────────────────
     /**
@@ -236,6 +253,7 @@ class SettingsViewModel @Inject constructor(
         keyVault.setOpenRouterKey(value)
         if (value.isNotBlank()) openRouterModelService.fetchModels(forceRefresh = true)
     }
+
     fun updateLocalLlmUrl(value: String)  = viewModelScope.launch { settingsRepository.updateLocalLlmUrl(value) }
     fun updateModelId(value: String)      = viewModelScope.launch { settingsRepository.updateModelId(value) }
     fun updateTemperature(value: Float)   = viewModelScope.launch { settingsRepository.updateTemperature(value) }
@@ -253,15 +271,20 @@ class SettingsViewModel @Inject constructor(
     // ── Voice Conversation ────────────────────────────────────────────────────
     fun updateMaxContextTurns(value: Int) = viewModelScope.launch { settingsRepository.updateMaxContextTurns(value) }
 
+    // ── Global Language ───────────────────────────────────────────────────────
+    fun updateLanguageCode(value: String) = viewModelScope.launch { settingsRepository.updateLanguageCode(value) }
+
     // ── Text-to-Speech ────────────────────────────────────────────────────────
     fun updateTtsEnabled(value: Boolean)    = viewModelScope.launch { settingsRepository.updateTtsEnabled(value) }
     fun updateTtsProvider(value: String)    = viewModelScope.launch {
         settingsRepository.updateTtsProvider(value)
+        val resolvedTtsId = TtsProvider.fromId(value).id
+        validateAndResetLanguageIfNeeded(sttProviderId = uiState.value.settings.sttProvider.id, ttsProviderId = resolvedTtsId)
         val defaultVoice = if (uiState.value.settings.appMode == AppMode.CUSTOM) {
             ""
         } else {
             when (value.uppercase()) {
-                "CARTESIA" -> "638efaaa-4d0c-442e-b701-3fae16aad012"
+                "CARTESIA" -> "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
                 "ELEVENLABS" -> "JBFqnCBsd6RMkjVDRZzb"
                 "OPENAI" -> "alloy"
                 "DEEPGRAM_AURA", "DEEPGRAM" -> "aura-asteria-en"
@@ -270,13 +293,6 @@ class SettingsViewModel @Inject constructor(
             }
         }
         settingsRepository.updateCartesiaVoiceId(defaultVoice)
-        pipelineSessionManager.getActivePipeline()?.let { active ->
-            val updated = active.copy(
-                ttsProviderId = value.lowercase(),
-                ttsVoiceId = defaultVoice
-            )
-            pipelineRepository.updatePipeline(updated)
-        }
     }
     fun updateTtsSpeechRate(value: Float)   = viewModelScope.launch { settingsRepository.updateTtsSpeechRate(value) }
     fun updateTtsPitch(value: Float)        = viewModelScope.launch { settingsRepository.updateTtsPitch(value) }

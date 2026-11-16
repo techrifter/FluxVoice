@@ -192,7 +192,7 @@ fun QuickGuideSheet(
                     GuideSectionHeader(title = "ONE-CLICK READY PRESETS")
                     Spacer(Modifier.height(8.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        allPipelines.forEach { pipeline ->
+                        allPipelines.take(5).forEach { pipeline ->
                             val isSelected = pipeline.id == selectedPipelineId
                             PresetGuideCard(
                                 pipeline = pipeline,
@@ -217,22 +217,22 @@ fun QuickGuideSheet(
                     FreeProviderItem(
                         icon = Icons.Rounded.Psychology,
                         name = "Google Gemini (Google AI Studio)",
-                        quota = "15 RPM • 1M Tokens/min Free",
-                        recommendation = "Gemini 2.5 Flash for deep multimodal analysis, structured answers, and complex queries ($0 balance required).",
+                        quota = "Gemini 2.5 Flash",
+                        recommendation = "Deep multimodal analysis, structured answers, and complex queries via Google AI Studio.",
                         color = FluxAzure
                     )
                     FreeProviderItem(
                         icon = Icons.Rounded.Bolt,
                         name = "Groq Cloud (LPU Accelerated)",
-                        quota = "<250ms Response • Free Tier",
-                        recommendation = "High-speed reasoning via openai/gpt-oss-120b and qwen/qwen3.8-27b on Groq LPUs, plus free Groq Whisper Turbo STT.",
+                        quota = "Sub-250ms Response Time",
+                        recommendation = "High-speed reasoning via openai/gpt-oss-120b and qwen/qwen3.8-27b on Groq LPUs, plus Groq Whisper Turbo STT.",
                         color = FluxSunsetOrange
                     )
                     FreeProviderItem(
                         icon = Icons.Rounded.GraphicEq,
                         name = "Deepgram Nova-3 STT",
-                        quota = "\$200 Free Credit (~45,000 mins)",
-                        recommendation = "Ultra-low latency streaming WebSocket speech recognition (<150ms) with automated speech endpointing.",
+                        quota = "Real-Time Communication",
+                        recommendation = "Ultra-low latency streaming speech recognition (<150ms) with automated speech endpointing.",
                         color = FluxEmerald
                     )
                     FreeProviderItem(
@@ -245,7 +245,7 @@ fun QuickGuideSheet(
                     FreeProviderItem(
                         icon = Icons.Rounded.Key,
                         name = "Universal BYOK (STT · LLM · TTS)",
-                        quota = "OpenAI-Compatible & Local",
+                        quota = "OpenAI-Compatible",
                         recommendation = "Bring your own keys and custom endpoints across all 3 pipeline stages: Whisper-compatible STT, chat completions, and speech synthesis.",
                         color = FluxCyan
                     )

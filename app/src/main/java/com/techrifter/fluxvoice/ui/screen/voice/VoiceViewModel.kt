@@ -178,7 +178,19 @@ class VoiceViewModel @Inject constructor(
             pipelineSessionManager.observeActivePipeline().collect { pipeline ->
                 val readiness = pipeline?.let { pipelineSessionManager.checkReadiness(it) } ?: PipelineReadiness.Ready
                 _uiState.update { it.copy(activePipeline = pipeline, pipelineReadiness = readiness) }
-                sttEngine.updateConfig(modelId = pipeline?.sttModelId, endpointingMs = pipeline?.sttEndpointingMs)
+                val effectiveLang = if (pipeline != null && !pipeline.isPreset && pipeline.languageCode.isNotBlank()) {
+                    pipeline.languageCode
+                } else {
+                    settings.value.languageCode
+                }
+                val effectiveRate = pipeline?.speechRate ?: settings.value.ttsSpeechRate
+                sttEngine.updateConfig(
+                    modelId = pipeline?.sttModelId,
+                    endpointingMs = pipeline?.sttEndpointingMs,
+                    languageCode = effectiveLang
+                )
+                ttsEngine.setLanguage(effectiveLang)
+                ttsEngine.setSpeechRate(effectiveRate)
             }
         }
     }
@@ -322,6 +334,9 @@ class VoiceViewModel @Inject constructor(
                                     }
                                 }
                             }
+                        } else if (!isVadEnabled) {
+                            vadArmJob?.cancel()
+                            vadDetector.stop()
                         }
                     }
                     TtsState.Idle -> {
@@ -353,17 +368,12 @@ class VoiceViewModel @Inject constructor(
                             errorMessage = ttsState.message
                         )
                         
-                        _uiState.update { it.copy(errorMessage = userFacingError(ttsState.message)) }
-
-                        // If streaming has completed or LLM streaming job is done, TTS error means
-                        // playback will not finish via TtsState.Idle. Finalize the turn immediately
-                        // so voiceState and transcripts are not left in limbo.
-                        val jobDone = streamingJob?.isCompleted == true
-                        if (isStreamingComplete || jobDone) {
-                            Log.d(TAG, "TTS error with streaming complete → finishing turn")
-                            finishTurnAndRestart()
-                        } else if (_uiState.value.voiceState == VoiceState.SPEAKING) {
-                            _uiState.update { it.copy(voiceState = VoiceState.IDLE, userTranscript = "", aiResponse = "") }
+                        Log.e(TAG, "TTS Error: ${ttsState.message} - stopping turn without restart")
+                        _uiState.update {
+                            it.copy(
+                                voiceState = VoiceState.IDLE,
+                                errorMessage = userFacingError(ttsState.message)
+                            )
                         }
                     }
                 }
@@ -387,19 +397,22 @@ class VoiceViewModel @Inject constructor(
         val isVadEnabled = _uiState.value.activePipeline?.vadEnabled ?: settings.value.vadEnabled
         val vadSensitivity = _uiState.value.activePipeline?.vadSensitivity ?: settings.value.vadSensitivity
 
+        if (fromVad && !isVadEnabled) {
+            Log.d(TAG, "VAD: auto barge-in triggered but ignored because VAD is disabled")
+            return
+        }
+
         if (fromVad && isBackchannelPhase) {
             Log.d(TAG, "VAD: false-positive barge-in suppressed during backchannel phase")
             // VAD stopped itself before this callback. Re-arm it immediately so it
             // is ready for the LLM content that is about to start playing.
-            if (isVadEnabled) {
-                vadArmJob?.cancel()
-                vadArmJob = viewModelScope.launch {
-                    delay(600)
-                    if (_uiState.value.voiceState == VoiceState.SPEAKING) {
-                        vadDetector.start(threshold = vadSensitivity) {
-                            Log.d(TAG, "VAD: auto barge-in triggered (re-armed)")
-                            viewModelScope.launch { triggerBargeIn(fromVad = true) }
-                        }
+            vadArmJob?.cancel()
+            vadArmJob = viewModelScope.launch {
+                delay(600)
+                if (_uiState.value.voiceState == VoiceState.SPEAKING) {
+                    vadDetector.start(threshold = vadSensitivity) {
+                        Log.d(TAG, "VAD: auto barge-in triggered (re-armed)")
+                        viewModelScope.launch { triggerBargeIn(fromVad = true) }
                     }
                 }
             }
@@ -445,7 +458,7 @@ class VoiceViewModel @Inject constructor(
         noSpeechTimeoutJob = viewModelScope.launch {
             kotlinx.coroutines.delay(NO_SPEECH_TIMEOUT_MS)
             if (_uiState.value.voiceState == VoiceState.LISTENING) {
-                Log.d(TAG, "No-speech timeout — closing mic")
+                Log.d(TAG, "No-speech timeout : closing mic")
                 sttEngine.stopListening()
                 // Update UI immediately — do not wait for SttState.Idle which depends
                 // on the WebSocket closing cleanly. If the socket is already gone the
@@ -466,8 +479,13 @@ class VoiceViewModel @Inject constructor(
      * Unlike [triggerBargeIn] we do NOT restart listening — the STT mic is already open.
      */
     private fun interruptTtsIfSpeaking() {
+        val isVadEnabled = _uiState.value.activePipeline?.vadEnabled ?: settings.value.vadEnabled
+        if (!isVadEnabled) {
+            Log.d(TAG, "interruptTtsIfSpeaking: ignored because auto barge-in is disabled")
+            return
+        }
         if (ttsEngine.state.value != TtsState.Speaking) return
-        Log.d(TAG, "interruptTtsIfSpeaking: stopping TTS — user is speaking")
+        Log.d(TAG, "interruptTtsIfSpeaking: stopping TTS : user is speaking")
         bargeInFlag = true
         backchannelJob?.cancel()
         backchannelJob = null
@@ -536,10 +554,23 @@ class VoiceViewModel @Inject constructor(
     private fun observeSettingsChanges() {
         viewModelScope.launch {
             settingsRepository.getSettings().collect { s ->
-                ttsEngine.setSpeechRate(s.ttsSpeechRate)
-                ttsEngine.setPitch(s.ttsPitch)
                 val active = _uiState.value.activePipeline
+                val rate = if (active != null && !active.isPreset) active.speechRate else s.ttsSpeechRate
+                ttsEngine.setSpeechRate(rate)
+                val isVad = active?.vadEnabled ?: s.vadEnabled
+                if (!isVad) {
+                    vadArmJob?.cancel()
+                    vadDetector.stop()
+                }
                 val readiness = active?.let { pipelineSessionManager.checkReadiness(it) } ?: PipelineReadiness.Ready
+                val effectiveLang = if (active != null && !active.isPreset && active.languageCode.isNotBlank()) {
+                    active.languageCode
+                } else {
+                    s.languageCode
+                }
+                val endpointingMs = if (active != null && !active.isPreset) active.sttEndpointingMs else null
+                sttEngine.updateConfig(languageCode = effectiveLang, endpointingMs = endpointingMs)
+                ttsEngine.setLanguage(effectiveLang)
                 _uiState.update {
                     it.copy(
                         voiceMode = s.voiceMode,
@@ -586,6 +617,10 @@ class VoiceViewModel @Inject constructor(
     }
 
     fun triggerPrompt(prompt: String) {
+        if (_uiState.value.voiceState != VoiceState.IDLE && _uiState.value.voiceState != VoiceState.SPEAKING) {
+            Log.w(TAG, "triggerPrompt ignored: voiceState is ${_uiState.value.voiceState}")
+            return
+        }
         if (_uiState.value.voiceState == VoiceState.SPEAKING) {
             ttsEngine.stop()
         }
@@ -596,6 +631,14 @@ class VoiceViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         errorMessage = readiness.formatErrorMessage("Settings"),
+                        pipelineReadiness = readiness
+                    )
+                }
+                return
+            } else if (readiness is PipelineReadiness.UnsupportedLanguage) {
+                _uiState.update {
+                    it.copy(
+                        errorMessage = readiness.formatErrorMessage(),
                         pipelineReadiness = readiness
                     )
                 }
@@ -632,9 +675,20 @@ class VoiceViewModel @Inject constructor(
     }
 
     fun toggleVad() {
-        val current = settings.value.vadEnabled
+        val current = _uiState.value.activePipeline?.vadEnabled ?: settings.value.vadEnabled
+        val newValue = !current
         viewModelScope.launch {
-            settingsRepository.updateVadEnabled(!current)
+            settingsRepository.updateVadEnabled(newValue)
+            val active = _uiState.value.activePipeline
+            if (active != null && (!active.isPreset || settings.value.appMode == AppMode.CUSTOM)) {
+                val updated = active.copy(vadEnabled = newValue)
+                pipelineRepository.updatePipeline(updated)
+                pipelineSessionManager.activatePipeline(updated)
+            }
+            if (!newValue) {
+                vadArmJob?.cancel()
+                vadDetector.stop()
+            }
         }
     }
 
@@ -651,7 +705,7 @@ class VoiceViewModel @Inject constructor(
                 val agentId = settings.value.elevenLabsAgentId
                 if (agentId.isBlank()) {
                     _uiState.update {
-                        it.copy(errorMessage = "ElevenLabs Agent ID not configured — set it in Settings")
+                        it.copy(errorMessage = "ElevenLabs Agent ID not configured : set it in Settings")
                     }
                     return
                 }
@@ -680,13 +734,25 @@ class VoiceViewModel @Inject constructor(
                             )
                         }
                         return
+                    } else if (readiness is PipelineReadiness.UnsupportedLanguage) {
+                        _uiState.update {
+                            it.copy(
+                                errorMessage = readiness.formatErrorMessage(),
+                                pipelineReadiness = readiness
+                            )
+                        }
+                        return
                     }
                 }
                 startListening()
             }
             VoiceState.LISTENING    -> {
-                sttEngine.stopListening()
-                _uiState.update { it.copy(voiceState = VoiceState.IDLE) }
+                if (_uiState.value.partialTranscript.isBlank()) {
+                    sttEngine.destroy()
+                    _uiState.update { it.copy(voiceState = VoiceState.IDLE, partialTranscript = "", userTranscript = "") }
+                } else {
+                    sttEngine.stopListening()
+                }
             }
             VoiceState.THINKING     -> {
                 backchannelJob?.cancel()
@@ -836,7 +902,8 @@ class VoiceViewModel @Inject constructor(
                 else            -> "" // let the model decide for complex queries
             }
             val voiceDirective = "\nSpeak directly in natural conversational prose suitable for real-time voice output. Never use pleasantry preamble (like 'Sure!' or 'Certainly!'), markdown symbols, bullet points, tables, code blocks, or emojis. Use punctuation to guide natural spoken pacing."
-            val effectivePrompt = settings.value.systemPrompt.trim() + " " + voiceDirective + lengthHint
+            val basePrompt = _uiState.value.activePipeline?.systemPrompt ?: settings.value.systemPrompt
+            val effectivePrompt = basePrompt.trim() + " " + voiceDirective + lengthHint
 
             try {
                 conversationRepository.streamResponse(userInput, effectivePrompt)
@@ -1071,6 +1138,12 @@ class VoiceViewModel @Inject constructor(
                     )
                 )
 
+                val effectiveLang = if (activePipe != null && !activePipe.isPreset && activePipe.languageCode.isNotBlank()) {
+                    activePipe.languageCode
+                } else {
+                    settings.value.languageCode
+                }
+
                 // 2. Anonymously record model usage & performance metrics in Firebase
                 // ZERO audio/transcripts sent; strictly maintains local privacy promise
                 telemetryRepository.recordTurnTelemetry(
@@ -1082,7 +1155,8 @@ class VoiceViewModel @Inject constructor(
                     totalTurnMs = total,
                     tokens = totalTokens,
                     bargeInOccurred = bargeInOccurred,
-                    pipelineName = pipeName
+                    pipelineName = pipeName,
+                    languageCode = effectiveLang
                 )
             }
         }
@@ -1116,35 +1190,43 @@ class VoiceViewModel @Inject constructor(
 
     // ── Error message mapping ─────────────────────────────────────────────────
 
-    /**
-     * Converts raw exception messages into calm, actionable user-facing copy.
-     * Rules: never show stack traces, API jargon, or HTTP status codes.
-     */
-    private fun userFacingError(raw: String): String = when {
-        raw.contains("not configured", ignoreCase = true) ||
-        raw.contains("API key", ignoreCase = true)        -> raw
-        raw.contains("Connection lost", ignoreCase = true) ||
-        raw.contains("Couldn't connect", ignoreCase = true) -> raw
-        raw.contains("permission", ignoreCase = true)     ->
-            "Microphone access is needed. Please grant the permission in your device settings."
-        raw.contains("401", ignoreCase = true)            ->
-            "API key is invalid or expired. Please update it in Settings."
-        raw.contains("402", ignoreCase = true)            ->
-            "Payment required or out of credits. Please check your provider account."
-        raw.contains("403", ignoreCase = true)            ->
-            "Access forbidden. Please check your API key and permissions."
-        raw.contains("429", ignoreCase = true)            ->
-            "Service is busy right now. Please wait a moment and try again."
-        raw.contains("timeout", ignoreCase = true) ||
-        raw.contains("timed out", ignoreCase = true)      ->
-            "The request timed out. Check your internet connection and try again."
-        raw.contains("broken pipe", ignoreCase = true) ||
-        raw.contains("Socket closed", ignoreCase = true) ||
-        raw.contains("EOF", ignoreCase = true)            ->
-            "Connection interrupted. Tap the mic to try again."
-        raw.isEmpty()                                     ->
-            "Something went wrong. Tap the mic to try again."
-        else -> raw // Show the actual error so the user isn't kept in the dark
+    private fun userFacingError(raw: String): String {
+        if (raw.isBlank()) return "Something went wrong. Tap the mic to try again."
+
+        // If the error already explicitly identifies the failing provider/stage, surface it directly
+        if (raw.contains("TTS:", ignoreCase = true) ||
+            raw.contains("STT:", ignoreCase = true) ||
+            raw.contains("LLM:", ignoreCase = true) ||
+            raw.contains("Deepgram", ignoreCase = true) ||
+            raw.contains("Cartesia", ignoreCase = true) ||
+            raw.contains("ElevenLabs", ignoreCase = true) ||
+            raw.contains("Groq", ignoreCase = true) ||
+            raw.contains("OpenAI", ignoreCase = true) ||
+            raw.contains("Gemini", ignoreCase = true)
+        ) {
+            return raw
+        }
+
+        return when {
+            raw.contains("permission", ignoreCase = true) ->
+                "Microphone access is needed. Please grant the permission in your device settings."
+            raw.contains("401", ignoreCase = true) ->
+                "API key is invalid or expired. Please update it in Settings."
+            raw.contains("402", ignoreCase = true) ->
+                "Payment required or out of credits. Please check your provider account."
+            raw.contains("403", ignoreCase = true) ->
+                "Access forbidden. Please check your API key and permissions."
+            raw.contains("429", ignoreCase = true) ->
+                "Service is busy right now. Please wait a moment and try again."
+            raw.contains("timeout", ignoreCase = true) ||
+            raw.contains("timed out", ignoreCase = true) ->
+                "The request timed out. Check your internet connection and try again."
+            raw.contains("broken pipe", ignoreCase = true) ||
+            raw.contains("Socket closed", ignoreCase = true) ||
+            raw.contains("EOF", ignoreCase = true) ->
+                "Connection interrupted. Tap the mic to try again."
+            else -> raw
+        }
     }
 
     // ── Sentence extraction ───────────────────────────────────────────────────

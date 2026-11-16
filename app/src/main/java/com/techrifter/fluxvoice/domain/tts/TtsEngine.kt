@@ -35,6 +35,7 @@ interface TtsEngine {
 
     fun setSpeechRate(rate: Float)
     fun setPitch(pitch: Float)
+    fun setLanguage(languageCode: String) {}
 
     /** Release TTS resources. Call from [ViewModel.onCleared]. */
     fun shutdown()

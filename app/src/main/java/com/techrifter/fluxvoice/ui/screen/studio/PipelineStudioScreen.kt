@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
@@ -92,6 +93,10 @@ import com.techrifter.fluxvoice.ui.theme.TextPureWhite
 import com.techrifter.fluxvoice.ui.theme.TextSlateDark
 import com.techrifter.fluxvoice.ui.theme.TextSlateMedium
 import com.techrifter.fluxvoice.ui.theme.TextSlateMuted
+import com.techrifter.fluxvoice.domain.model.AppLanguage
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -317,9 +322,57 @@ fun PipelineStudioScreen(
                     colors = studioFieldColors()
                 )
             }
-
+            
             // Section 2: Speech-to-Text
             StudioCard(title = "01 / SPEECH RECOGNITION (STT)") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Target Language", fontSize = 12.sp, color = TextSlateMedium)
+                    Box {
+                        var expandedLang by remember { mutableStateOf(false) }
+                        val currentLang = AppLanguage.fromCode(uiState.languageCode)
+                        
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = ObsidianVoid,
+                            border = BorderStroke(1.dp, HairlineHighlight),
+                            modifier = Modifier.clickable { expandedLang = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(currentLang.displayName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = FluxCyan)
+                                Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, tint = FluxCyan, modifier = Modifier.size(14.dp))
+                            }
+                        }
+
+                        val availableLangs = remember(uiState.sttProviderId, uiState.ttsProviderId) {
+                            AppLanguage.getSupportedLanguages(uiState.sttProviderId, uiState.ttsProviderId)
+                        }
+
+                        DropdownMenu(
+                            expanded = expandedLang,
+                            onDismissRequest = { expandedLang = false }
+                        ) {
+                            availableLangs.forEach { lang ->
+                                DropdownMenuItem(
+                                    text = { Text(lang.displayName, fontSize = 12.sp) },
+                                    onClick = {
+                                        viewModel.updateLanguageCode(lang.code)
+                                        expandedLang = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -674,13 +727,29 @@ fun PipelineStudioScreen(
                             value = uiState.ttsVoiceId,
                             onValueChange = viewModel::updateTtsVoiceId,
                             label = { Text("Cartesia Voice ID", fontSize = 12.sp) },
-                            placeholder = { Text("638efaaa-4d0c-442e-b701-3fae16aad012", fontSize = 12.sp, color = TextSlateDark) },
+                            placeholder = { Text("db6b0ed5-d5d3-463d-ae85-518a07d3c2b4", fontSize = 12.sp, color = TextSlateDark) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
                             singleLine = true,
                             colors = studioFieldColors(),
                             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Skylar (Multilingual)" to "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
+                                "Daniel (Multilingual)" to "47c38ca4-5f35-497b-b1a3-415245fb35e1",
+                                "Jacqueline (Multilingual)" to "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+                                "Gemma (Multilingual)" to "62ae83ad-4f6a-430b-af41-a9bede9286ca"
+                            ).forEach { (label, id) ->
+                                SegmentedPill(label = label, selected = uiState.ttsVoiceId == id) {
+                                    viewModel.updateTtsVoiceId(id)
+                                }
+                            }
+                        }
                     }
                     "elevenlabs" -> {
                         OutlinedTextField(
@@ -694,12 +763,28 @@ fun PipelineStudioScreen(
                             colors = studioFieldColors(),
                             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "George (Multilingual)" to "JBFqnCBsd6RMkjVDRZzb",
+                                "Sarah (Multilingual)" to "EXAVITQu4vr4xnSDxMaL",
+                                "Adam (Multilingual)" to "pNInz6obpgDQGcFmaJgB",
+                                "Charlotte (Multilingual)" to "XB0fDUnXU5powFXDhCwa"
+                            ).forEach { (label, id) ->
+                                SegmentedPill(label = label, selected = uiState.ttsVoiceId == id) {
+                                    viewModel.updateTtsVoiceId(id)
+                                }
+                            }
+                        }
                     }
                     "openai" -> {
                         OutlinedTextField(
                             value = uiState.ttsVoiceId,
                             onValueChange = viewModel::updateTtsVoiceId,
-                            label = { Text("OpenAI Voice (alloy, echo, fable, onyx, nova, shimmer)", fontSize = 12.sp) },
+                            label = { Text("OpenAI Voice Model", fontSize = 12.sp) },
                             placeholder = { Text("alloy", fontSize = 12.sp, color = TextSlateDark) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
@@ -707,6 +792,22 @@ fun PipelineStudioScreen(
                             colors = studioFieldColors(),
                             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Alloy (Multilingual)" to "alloy",
+                                "Nova (Multilingual)" to "nova",
+                                "Echo (Multilingual)" to "echo",
+                                "Shimmer (Multilingual)" to "shimmer"
+                            ).forEach { (label, id) ->
+                                SegmentedPill(label = label, selected = uiState.ttsVoiceId == id) {
+                                    viewModel.updateTtsVoiceId(id)
+                                }
+                            }
+                        }
                     }
                     "deepgram" -> {
                         OutlinedTextField(
@@ -720,6 +821,22 @@ fun PipelineStudioScreen(
                             colors = studioFieldColors(),
                             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Asteria (English)" to "aura-asteria-en",
+                                "Orion (English)" to "aura-orion-en",
+                                "Luna (English)" to "aura-luna-en",
+                                "Zeus (English)" to "aura-zeus-en"
+                            ).forEach { (label, id) ->
+                                SegmentedPill(label = label, selected = uiState.ttsVoiceId == id) {
+                                    viewModel.updateTtsVoiceId(id)
+                                }
+                            }
+                        }
                     }
                     "custom" -> {
                         OutlinedTextField(

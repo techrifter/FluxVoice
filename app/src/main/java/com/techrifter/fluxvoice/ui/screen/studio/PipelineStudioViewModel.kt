@@ -7,6 +7,7 @@ import com.techrifter.fluxvoice.data.local.db.DefaultPipelines
 import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterModel
 import com.techrifter.fluxvoice.data.remote.provider.openrouter.OpenRouterModelService
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.model.AppLanguage
 import com.techrifter.fluxvoice.domain.model.PipelineConfig
 import com.techrifter.fluxvoice.domain.pipeline.PipelineExporter
 import com.techrifter.fluxvoice.domain.pipeline.PipelineSessionManager
@@ -47,7 +48,8 @@ data class PipelineStudioUiState(
     val systemPrompt: String = com.techrifter.fluxvoice.domain.model.PipelineConfig.DEFAULT_SYSTEM_PROMPT,
 
     val ttsProviderId: String = "cartesia",
-    val ttsVoiceId: String = "638efaaa-4d0c-442e-b701-3fae16aad012",
+    val ttsVoiceId: String = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
+    val languageCode: String = "en",
     val speechRate: Float = 1.0f,
 
     val vadEnabled: Boolean = true,
@@ -137,7 +139,7 @@ class PipelineStudioViewModel @Inject constructor(
                         temperature = 0.7f,
                         systemPrompt = PipelineConfig.DEFAULT_SYSTEM_PROMPT,
                         ttsProviderId = "cartesia",
-                        ttsVoiceId = "638efaaa-4d0c-442e-b701-3fae16aad012",
+                        ttsVoiceId = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
                         speechRate = 1.0f,
                         vadEnabled = true,
                         vadSensitivity = 850,
@@ -189,13 +191,12 @@ class PipelineStudioViewModel @Inject constructor(
     }
 
     private suspend fun loadDefaultOrActive() {
-        val existingCustom = pipelineRepository.getPipelineById(DefaultPipelines.CUSTOM_PIPELINE_ID)
         val active = pipelineSessionManager.getActivePipeline()
+        val existingCustom = pipelineRepository.getPipelineById(DefaultPipelines.CUSTOM_PIPELINE_ID)
 
         val base = when {
-            existingCustom != null -> existingCustom
-            active != null && !active.isPreset -> active
             active != null -> active
+            existingCustom != null -> existingCustom
             else -> null
         }
 
@@ -242,6 +243,7 @@ class PipelineStudioViewModel @Inject constructor(
                 systemPrompt = base.systemPrompt,
                 ttsProviderId = base.ttsProviderId,
                 ttsVoiceId = base.ttsVoiceId,
+                languageCode = base.languageCode,
                 speechRate = base.speechRate,
                 vadEnabled = base.vadEnabled,
                 vadSensitivity = base.vadSensitivity,
@@ -277,7 +279,7 @@ class PipelineStudioViewModel @Inject constructor(
                     else -> "cartesia"
                 }
                 val defaultVoiceId = when (ttsProvider) {
-                    "cartesia" -> if (modelId.contains("-") && modelId.length > 25) modelId else "638efaaa-4d0c-442e-b701-3fae16aad012"
+                    "cartesia" -> if (modelId.contains("-") && modelId.length > 25) modelId else "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
                     "elevenlabs" -> if (modelId.length > 15 && !modelId.contains("eleven", ignoreCase = true)) modelId else "JBFqnCBsd6RMkjVDRZzb"
                     "openai" -> "alloy"
                     "deepgram" -> "aura-asteria-en"
@@ -307,7 +309,11 @@ class PipelineStudioViewModel @Inject constructor(
     fun updateDescription(desc: String) = _uiState.update { it.copy(description = desc) }
     fun updateSttProvider(stt: String) {
         val defaultModel = if (stt.lowercase() == "custom") "whisper-1" else if (stt.lowercase() == "deepgram") "nova-3" else "whisper-large-v3-turbo"
-        _uiState.update { it.copy(sttProviderId = stt, sttModelId = defaultModel) }
+        _uiState.update { current ->
+            val supported = AppLanguage.getSupportedLanguages(stt, current.ttsProviderId).map { it.code }
+            val newLang = if (current.languageCode.lowercase() in supported) current.languageCode else "en"
+            current.copy(sttProviderId = stt, sttModelId = defaultModel, languageCode = newLang)
+        }
     }
     fun updateSttModel(model: String) = _uiState.update { it.copy(sttModelId = model) }
     fun updateSttEndpointing(ms: Int) = _uiState.update { it.copy(sttEndpointingMs = ms) }
@@ -343,17 +349,23 @@ class PipelineStudioViewModel @Inject constructor(
 
     fun updateTtsProvider(provider: String) {
         val defaultVoice = when (provider.lowercase()) {
-            "cartesia" -> "638efaaa-4d0c-442e-b701-3fae16aad012"
+            "cartesia" -> "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
             "elevenlabs" -> "JBFqnCBsd6RMkjVDRZzb"
             "openai" -> "alloy"
             "deepgram", "deepgram_aura" -> "aura-asteria-en"
             else -> "default"
         }
-        _uiState.update { it.copy(ttsProviderId = provider, ttsVoiceId = defaultVoice) }
+        _uiState.update { current ->
+            val supported = AppLanguage.getSupportedLanguages(current.sttProviderId, provider).map { it.code }
+            val newLang = if (current.languageCode.lowercase() in supported) current.languageCode else "en"
+            current.copy(ttsProviderId = provider, ttsVoiceId = defaultVoice, languageCode = newLang)
+        }
     }
 
     fun updateTtsVoiceId(voiceId: String) = _uiState.update { it.copy(ttsVoiceId = voiceId) }
     fun updateSpeechRate(rate: Float) = _uiState.update { it.copy(speechRate = rate) }
+
+    fun updateLanguageCode(value: String) = _uiState.update { it.copy(languageCode = value) }
 
     fun updateVadEnabled(enabled: Boolean) = _uiState.update { it.copy(vadEnabled = enabled) }
     fun updateVadSensitivity(sensitivity: Int) = _uiState.update { it.copy(vadSensitivity = sensitivity) }
@@ -390,6 +402,7 @@ class PipelineStudioViewModel @Inject constructor(
             systemPrompt = s.systemPrompt,
             ttsProviderId = s.ttsProviderId,
             ttsVoiceId = s.ttsVoiceId,
+            languageCode = s.languageCode,
             speechRate = s.speechRate,
             vadEnabled = s.vadEnabled,
             vadSensitivity = s.vadSensitivity,
@@ -440,6 +453,7 @@ class PipelineStudioViewModel @Inject constructor(
             systemPrompt = s.systemPrompt,
             ttsProviderId = s.ttsProviderId,
             ttsVoiceId = s.ttsVoiceId,
+            languageCode = s.languageCode,
             speechRate = s.speechRate,
             vadEnabled = s.vadEnabled,
             vadSensitivity = s.vadSensitivity,

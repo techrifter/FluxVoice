@@ -74,6 +74,12 @@ class WhisperSttEngine @Inject constructor(
 
     // ── SttEngine ──────────────────────────────────────────────────────────────
 
+    @Volatile private var currentLanguage: String = "en"
+
+    override fun updateConfig(modelId: String?, endpointingMs: Int?, languageCode: String?) {
+        languageCode?.let { currentLanguage = it }
+    }
+
     override fun startListening() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -165,6 +171,7 @@ class WhisperSttEngine @Inject constructor(
                     MultiPartFormDataContent(
                         formData {
                             append("model", "whisper-1")
+                            append("language", currentLanguage)
                             append(
                                 key = "file",
                                 value = wavBytes,

@@ -36,7 +36,7 @@ class SettingsRepositoryImpl @Inject constructor(
         p[SettingsDataStore.VOICE_MODE]          = VoiceMode.STANDARD.name
         p[SettingsDataStore.TTS_ENABLED]         = true
         p[SettingsDataStore.TTS_PROVIDER]        = "cartesia"
-        p[SettingsDataStore.CARTESIA_VOICE_ID]   = "638efaaa-4d0c-442e-b701-3fae16aad012"
+        p[SettingsDataStore.CARTESIA_VOICE_ID]   = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
         p[SettingsDataStore.SYSTEM_PROMPT]       = "You are Flux Fast, an ultra-low-latency voice assistant. Deliver immediate, high-signal answers in 1 to 2 punchy sentences. Never use preamble, pleasantries, or filler."
     }
 
@@ -52,7 +52,7 @@ class SettingsRepositoryImpl @Inject constructor(
         p[SettingsDataStore.VOICE_MODE]          = VoiceMode.STANDARD.name
         p[SettingsDataStore.TTS_ENABLED]         = true
         p[SettingsDataStore.TTS_PROVIDER]        = "cartesia"
-        p[SettingsDataStore.CARTESIA_VOICE_ID]   = "638efaaa-4d0c-442e-b701-3fae16aad012"
+        p[SettingsDataStore.CARTESIA_VOICE_ID]   = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
         p[SettingsDataStore.SYSTEM_PROMPT]       = "You are Flux Reason, an expert voice advisor for deep reasoning and system architecture. Analyze questions with first-principles depth, then articulate your answer in clear, flowing spoken paragraphs without bullet points or outlines."
     }
 
@@ -129,6 +129,10 @@ class SettingsRepositoryImpl @Inject constructor(
     // ── Voice Conversation ────────────────────────────────────────────────────
     override suspend fun updateMaxContextTurns(value: Int) =
         dataStore.update { it[SettingsDataStore.MAX_CONTEXT_TURNS] = value }
+
+    // ── Global Language ───────────────────────────────────────────────────────
+    override suspend fun updateLanguageCode(value: String) =
+        dataStore.update { it[SettingsDataStore.LANGUAGE_CODE] = value }
 
     // ── Text-to-Speech ────────────────────────────────────────────────────────
     override suspend fun updateTtsEnabled(value: Boolean) =

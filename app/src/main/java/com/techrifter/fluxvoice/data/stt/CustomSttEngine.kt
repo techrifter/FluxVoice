@@ -67,6 +67,12 @@ class CustomSttEngine @Inject constructor(
     @Volatile var activeApiKey: String = ""
     @Volatile var activeModelId: String = "whisper-1"
 
+    @Volatile private var currentLanguage: String = "en"
+
+    override fun updateConfig(modelId: String?, endpointingMs: Int?, languageCode: String?) {
+        languageCode?.let { currentLanguage = it }
+    }
+
     override fun startListening() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
@@ -178,6 +184,7 @@ class CustomSttEngine @Inject constructor(
                                 }
                             )
                             append("model", model)
+                            append("language", currentLanguage)
                             append("response_format", "json")
                         }
                     )

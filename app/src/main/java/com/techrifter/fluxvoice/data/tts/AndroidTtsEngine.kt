@@ -11,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +39,13 @@ class AndroidTtsEngine @Inject constructor(
 
     private var tts: TextToSpeech? = null
     @Volatile private var isInitialized = false
+
+    private data class PendingSpeak(val text: String, val utteranceId: String)
+    private val pendingQueue = ConcurrentLinkedQueue<PendingSpeak>()
+
+    @Volatile private var pendingLanguage: String? = null
+    @Volatile private var pendingSpeechRate: Float? = null
+    @Volatile private var pendingPitch: Float? = null
 
     /**
      * Tracks the number of utterances currently queued/playing.
@@ -72,7 +81,21 @@ class AndroidTtsEngine @Inject constructor(
                 if (status == TextToSpeech.SUCCESS) {
                     isInitialized = true
                     tts?.setOnUtteranceProgressListener(utteranceListener)
+                    
+                    // Apply any pending configuration
+                    pendingLanguage?.let { tts?.language = Locale.forLanguageTag(it) }
+                    pendingSpeechRate?.let { tts?.setSpeechRate(it) }
+                    pendingPitch?.let { tts?.setPitch(it) }
+
+                    // Drain any queued speak requests
+                    while (!pendingQueue.isEmpty()) {
+                        val req = pendingQueue.poll() ?: break
+                        pendingUtterances.incrementAndGet()
+                        _state.value = TtsState.Speaking
+                        tts?.speak(req.text, TextToSpeech.QUEUE_ADD, null, req.utteranceId)
+                    }
                 } else {
+                    pendingQueue.clear()
                     _state.value = TtsState.Error("TTS initialisation failed (status $status)")
                 }
             }
@@ -82,27 +105,47 @@ class AndroidTtsEngine @Inject constructor(
     // ── TtsEngine ─────────────────────────────────────────────────────────────
 
     override fun speak(text: String, utteranceId: String) {
-        if (!isInitialized || text.isBlank()) return
+        if (text.isBlank()) return
+        if (!isInitialized) {
+            _state.value = TtsState.Speaking
+            pendingQueue.add(PendingSpeak(text, utteranceId))
+            return
+        }
         pendingUtterances.incrementAndGet()
         _state.value = TtsState.Speaking
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
     override fun stop() {
+        pendingQueue.clear()
         pendingUtterances.set(0)
         tts?.stop()
         _state.value = TtsState.Idle
     }
 
     override fun setSpeechRate(rate: Float) {
-        tts?.setSpeechRate(rate)
+        pendingSpeechRate = rate
+        if (isInitialized) {
+            tts?.setSpeechRate(rate)
+        }
     }
 
     override fun setPitch(pitch: Float) {
-        tts?.setPitch(pitch)
+        pendingPitch = pitch
+        if (isInitialized) {
+            tts?.setPitch(pitch)
+        }
+    }
+
+    override fun setLanguage(languageCode: String) {
+        pendingLanguage = languageCode
+        if (isInitialized) {
+            tts?.language = Locale.forLanguageTag(languageCode)
+        }
     }
 
     override fun shutdown() {
+        pendingQueue.clear()
         pendingUtterances.set(0)
         tts?.stop()
         tts?.shutdown()

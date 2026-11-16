@@ -10,7 +10,8 @@ interface TelemetryRepository {
         totalTurnMs: Long,
         tokens: Int,
         bargeInOccurred: Boolean,
-        pipelineName: String
+        pipelineName: String,
+        languageCode: String
     )
     
     fun recordPipelineError(

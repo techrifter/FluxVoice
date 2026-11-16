@@ -2,6 +2,7 @@ package com.techrifter.fluxvoice.data.tts
 
 import android.util.Log
 import com.techrifter.fluxvoice.data.security.KeyVault
+import com.techrifter.fluxvoice.domain.repository.SettingsRepository
 import com.techrifter.fluxvoice.domain.tts.TtsEngine
 import com.techrifter.fluxvoice.domain.tts.TtsState
 import io.ktor.client.HttpClient
@@ -9,6 +10,9 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsText
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -55,6 +59,7 @@ private data class OpenAiSpeakRequest(
 class OpenAiTtsEngine @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json,
+    private val settingsRepository: SettingsRepository,
     private val keyVault: KeyVault,
     private val androidFallback: AndroidTtsEngine
 ) : TtsEngine {
@@ -71,12 +76,18 @@ class OpenAiTtsEngine @Inject constructor(
     private var idleDebounceJob: Job? = null
 
     @Volatile var activeVoice: String = DEFAULT_OPENAI_VOICE
+    @Volatile private var cachedVoice: String = DEFAULT_OPENAI_VOICE
 
     init {
         startWorker()
         engineScope.launch {
+            settingsRepository.getSettings().collect { s ->
+                cachedVoice = s.cartesiaVoiceId.ifBlank { activeVoice.ifBlank { DEFAULT_OPENAI_VOICE } }
+            }
+        }
+        engineScope.launch {
             androidFallback.state.collect { s ->
-                if (pendingCount.get() == 0 && keyVault.getOpenAiKey().isBlank()) {
+                if (pendingCount.get() == 0) {
                     _state.value = s
                 }
             }
@@ -99,7 +110,7 @@ class OpenAiTtsEngine @Inject constructor(
         _state.value = TtsState.Speaking
 
         if (key.isBlank()) {
-            Log.d(TAG, "No OpenAI key — delegating to Android TTS")
+            Log.d(TAG, "No OpenAI key : delegating to Android TTS")
             val remaining = pendingCount.decrementAndGet()
             if (remaining <= 0) {
                 pendingCount.set(0)
@@ -109,7 +120,7 @@ class OpenAiTtsEngine @Inject constructor(
             return
         }
 
-        speakChannel.trySend(OpenAiSpeakRequest(text, utteranceId, key, activeVoice.ifBlank { DEFAULT_OPENAI_VOICE }))
+        speakChannel.trySend(OpenAiSpeakRequest(text, utteranceId, key, cachedVoice))
     }
 
     override fun stop() {
@@ -124,12 +135,19 @@ class OpenAiTtsEngine @Inject constructor(
         startWorker()
     }
 
+    @Volatile private var cachedSpeechRate = 1.0f
+
     override fun setSpeechRate(rate: Float) {
+        cachedSpeechRate = rate.coerceIn(0.5f, 2.0f)
         androidFallback.setSpeechRate(rate)
     }
 
     override fun setPitch(pitch: Float) {
         androidFallback.setPitch(pitch)
+    }
+
+    override fun setLanguage(languageCode: String) {
+        androidFallback.setLanguage(languageCode)
     }
 
     override fun shutdown() {
@@ -142,7 +160,7 @@ class OpenAiTtsEngine @Inject constructor(
         try {
             Log.d(TAG, "OpenAI synthesizing '${req.text.take(50)}'")
             val pcmBytes = callOpenAiApi(req) ?: return
-            audioPlayer.playPcm(pcmBytes, sampleRate = SAMPLE_RATE, numChannels = 1)
+            audioPlayer.playPcm(pcmBytes, sampleRate = SAMPLE_RATE, numChannels = 1, speechRate = cachedSpeechRate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -175,13 +193,18 @@ class OpenAiTtsEngine @Inject constructor(
         }
 
         if (!response.status.isSuccess()) {
+            val errorBody = response.bodyAsText()
+            val parsedMsg = try {
+                json.parseToJsonElement(errorBody).jsonObject["error"]
+                    ?.jsonObject?.get("message")?.jsonPrimitive?.content
+            } catch (_: Exception) { null }
             val status = response.status.value
-            val hint = when (status) {
-                401 -> "Invalid OpenAI API key. Check Key Vault."
+            val hint = parsedMsg ?: when (status) {
+                401 -> "Invalid OpenAI API key — check Settings."
                 429 -> "OpenAI TTS rate limit reached."
                 else -> "OpenAI HTTP $status"
             }
-            _state.value = TtsState.Error(hint)
+            _state.value = TtsState.Error("OpenAI TTS: $hint")
             return null
         }
 
